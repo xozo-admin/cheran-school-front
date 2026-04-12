@@ -1,0 +1,15 @@
+export { TeacherSidebar } from './Sidebar';
+export { TeacherHeader } from './Header';
+export { TeacherMainContent } from './MainContent';
+export { TeacherStatsGrid } from './TeacherStatsGrid';
+export { TeacherStatsCard } from './TeacherStatsCard';
+export { TodaySchedule } from './TodaySchedule';
+export { UpcomingClasses } from './UpcomingClasses';
+export { AssignmentStatus } from './AssignmentStatus';
+export { StudentPerformance } from './StudentPerformance';
+export { QuickTeacherActions } from './QuickTeacherActions';
+export { RecentStudentSubmissions } from './RecentStudentSubmissions';
+export { ClassAttendance } from './ClassAttendance';
+export { TeachingResources } from './TeachingResources';
+export { ParentCommunications } from './ParentCommunications';
+export { ActivityMonitoring } from './ActivityMonitoring';

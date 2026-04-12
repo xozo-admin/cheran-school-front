@@ -1,0 +1,1 @@
+export { TeacherModal  } from './TeacherModel';

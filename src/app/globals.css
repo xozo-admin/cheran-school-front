@@ -1,0 +1,430 @@
+/* src/app/globals.css */
+
+@import '@/styles/theme.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+
+@layer base {
+  * {
+    @apply border-border-primary;
+  }
+  
+  body {
+    @apply bg-background-primary text-text-primary;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    transition: background-color 150ms ease, color 150ms ease;
+  }
+  
+  /* Smooth transitions for theme changes */
+  * {
+    transition-property: background-color, border-color, color, fill, stroke;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 150ms;
+  }
+}
+
+@layer components {
+  /* Theme-aware components */
+  .card {
+    @apply bg-background-card rounded-lg border border-border-primary shadow-md p-6;
+  }
+  
+  .btn-primary {
+    @apply bg-accent-primary text-white px-4 py-2 rounded-lg hover:opacity-90 transition-opacity;
+  }
+  
+  .input-primary {
+    @apply bg-background-card border border-border-secondary rounded-lg px-3 py-2 
+           focus:outline-none focus:ring-2 focus:ring-accent-primary focus:border-transparent
+           placeholder:text-text-tertiary;
+  }
+}
+
+
+/* In your global.css or tailwind config */
+@media (max-width: 640px) {
+
+  
+  .text-xs-mobile {
+    font-size: 0.75rem;
+  }
+  
+  .p-2-mobile {
+    padding: 0.5rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .hide-on-mobile {
+    display: none;
+  }
+  
+  .show-on-mobile {
+    display: block;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+  .tablet-optimized {
+    font-size: 0.875rem;
+  }
+}
+
+/* Unified dashboard typography across MainContent widgets */
+.dashboard-typography {
+  --dashboard-heading-size: 1rem;
+  --dashboard-subheading-size: 0.875rem;
+  --dashboard-body-size: 0.8125rem;
+}
+
+@media (min-width: 640px) {
+  .dashboard-typography {
+    --dashboard-heading-size: 1.125rem;
+    --dashboard-subheading-size: 0.9375rem;
+    --dashboard-body-size: 0.875rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .dashboard-typography {
+    --dashboard-heading-size: 1.25rem;
+    --dashboard-subheading-size: 1rem;
+    --dashboard-body-size: 0.9375rem;
+  }
+}
+
+.dashboard-typography h1 {
+  font-size: var(--dashboard-heading-size) !important;
+  line-height: 1.3 !important;
+}
+
+.dashboard-typography h2,
+.dashboard-typography h3,
+.dashboard-typography h4,
+.dashboard-typography h5,
+.dashboard-typography h6 {
+  font-size: var(--dashboard-subheading-size) !important;
+  line-height: 1.35 !important;
+}
+
+.dashboard-typography p,
+.dashboard-typography span,
+.dashboard-typography button,
+.dashboard-typography a,
+.dashboard-typography label,
+.dashboard-typography li,
+.dashboard-typography td,
+.dashboard-typography th,
+.dashboard-typography input,
+.dashboard-typography select,
+.dashboard-typography textarea {
+  font-size: var(--dashboard-body-size) !important;
+  line-height: 1.4 !important;
+}
+
+/* Fixed, non-responsive sizing for admin students/allstudents page */
+.allstudents-unified-scale {
+  --allstudents-heading-size: 1.125rem;
+  --allstudents-subheading-size: 0.9375rem;
+  --allstudents-body-size: 0.875rem;
+  --allstudents-icon-size: 1rem;
+}
+
+.allstudents-unified-scale h1,
+.allstudents-unified-scale h2 {
+  font-size: var(--allstudents-heading-size) !important;
+  line-height: 1.3 !important;
+}
+
+.allstudents-unified-scale h3,
+.allstudents-unified-scale h4,
+.allstudents-unified-scale h5,
+.allstudents-unified-scale h6 {
+  font-size: var(--allstudents-subheading-size) !important;
+  line-height: 1.35 !important;
+}
+
+.allstudents-unified-scale p,
+.allstudents-unified-scale span,
+.allstudents-unified-scale button,
+.allstudents-unified-scale a,
+.allstudents-unified-scale label,
+.allstudents-unified-scale li,
+.allstudents-unified-scale td,
+.allstudents-unified-scale th,
+.allstudents-unified-scale input,
+.allstudents-unified-scale select,
+.allstudents-unified-scale textarea {
+  font-size: var(--allstudents-body-size) !important;
+  line-height: 1.4 !important;
+}
+
+.allstudents-unified-scale svg {
+  width: var(--allstudents-icon-size) !important;
+  height: var(--allstudents-icon-size) !important;
+}
+
+/* Student overview sizing harmonized with dashboard header/sidebar density */
+.student-overview-scale {
+  --student-overview-heading-size: 1.125rem;
+  --student-overview-subheading-size: 0.9375rem;
+  --student-overview-body-size: 0.875rem;
+  --student-overview-icon-size: 1rem;
+  --student-overview-card-padding: 1rem;
+}
+
+@media (min-width: 640px) {
+  .student-overview-scale {
+    --student-overview-heading-size: 1.25rem;
+    --student-overview-subheading-size: 1rem;
+    --student-overview-body-size: 0.875rem;
+    --student-overview-icon-size: 1rem;
+    --student-overview-card-padding: 1.25rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .student-overview-scale {
+    --student-overview-heading-size: 1.375rem;
+    --student-overview-subheading-size: 1.0625rem;
+    --student-overview-body-size: 0.9375rem;
+    --student-overview-icon-size: 1rem;
+    --student-overview-card-padding: 1.5rem;
+  }
+}
+
+.student-overview-scale h1,
+.student-overview-scale h2 {
+  font-size: var(--student-overview-heading-size) !important;
+  line-height: 1.3 !important;
+}
+
+.student-overview-scale h3,
+.student-overview-scale h4,
+.student-overview-scale h5,
+.student-overview-scale h6 {
+  font-size: var(--student-overview-subheading-size) !important;
+  line-height: 1.35 !important;
+}
+
+.student-overview-scale p,
+.student-overview-scale span,
+.student-overview-scale button,
+.student-overview-scale label,
+.student-overview-scale td,
+.student-overview-scale th,
+.student-overview-scale input,
+.student-overview-scale select,
+.student-overview-scale textarea {
+  font-size: var(--student-overview-body-size) !important;
+  line-height: 1.4 !important;
+}
+
+.student-overview-scale button svg,
+.student-overview-scale th svg,
+.student-overview-scale td svg,
+.student-overview-scale h3 svg,
+.student-overview-scale h4 svg {
+  width: var(--student-overview-icon-size) !important;
+  height: var(--student-overview-icon-size) !important;
+}
+
+.student-overview-scale .student-overview-card {
+  padding: var(--student-overview-card-padding) !important;
+  border-radius: 1rem !important;
+}
+
+/* Transport map popup styling */
+.transport-map-popup .leaflet-popup-content-wrapper {
+  background: linear-gradient(135deg, #eff6ff 0%, #ffffff 100%) !important;
+  color: #0f172a !important;
+  border: 1px solid #bfdbfe !important;
+  border-radius: 0.875rem !important;
+  box-shadow: 0 10px 30px rgba(37, 99, 235, 0.2) !important;
+}
+
+.dark .transport-map-popup .leaflet-popup-content-wrapper {
+  background: linear-gradient(135deg, #0f172a 0%, #1f2937 100%) !important;
+  color: #e2e8f0 !important;
+  border: 1px solid #334155 !important;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.55) !important;
+}
+
+.transport-map-popup .leaflet-popup-content {
+  margin: 0.625rem 0.75rem !important;
+  font-size: 0.8125rem !important;
+  line-height: 1.35 !important;
+  min-width: 12rem !important;
+}
+
+.transport-map-popup .leaflet-popup-tip {
+  background: #eff6ff !important;
+}
+
+.dark .transport-map-popup .leaflet-popup-tip {
+  background: #0f172a !important;
+}
+
+.transport-map-popup .leaflet-popup-close-button {
+  color: #1d4ed8 !important;
+  font-size: 1rem !important;
+  top: 6px !important;
+  right: 8px !important;
+}
+
+.dark .transport-map-popup .leaflet-popup-close-button {
+  color: #93c5fd !important;
+}
+
+@media (max-width: 640px) {
+  .transport-map-popup .leaflet-popup-content {
+    margin: 0.5rem 0.625rem !important;
+    font-size: 0.75rem !important;
+    min-width: 10.5rem !important;
+  }
+}
+
+/* Student attendance sizing harmonized with dashboard header/sidebar */
+.attendance-scale {
+  --attendance-heading-size: 1.125rem;
+  --attendance-subheading-size: 0.9375rem;
+  --attendance-body-size: 0.875rem;
+  --attendance-icon-size: 1rem;
+  --attendance-card-padding: 1rem;
+}
+
+@media (min-width: 640px) {
+  .attendance-scale {
+    --attendance-heading-size: 1.25rem;
+    --attendance-subheading-size: 1rem;
+    --attendance-body-size: 0.875rem;
+    --attendance-icon-size: 1rem;
+    --attendance-card-padding: 1.25rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .attendance-scale {
+    --attendance-heading-size: 1.375rem;
+    --attendance-subheading-size: 1.0625rem;
+    --attendance-body-size: 0.9375rem;
+    --attendance-icon-size: 1rem;
+    --attendance-card-padding: 1.5rem;
+  }
+}
+
+.attendance-scale h1,
+.attendance-scale h2 {
+  font-size: var(--attendance-heading-size) !important;
+  line-height: 1.3 !important;
+}
+
+.attendance-scale h3,
+.attendance-scale h4,
+.attendance-scale h5,
+.attendance-scale h6 {
+  font-size: var(--attendance-subheading-size) !important;
+  line-height: 1.35 !important;
+}
+
+.attendance-scale p,
+.attendance-scale span,
+.attendance-scale button,
+.attendance-scale label,
+.attendance-scale td,
+.attendance-scale th,
+.attendance-scale input,
+.attendance-scale select,
+.attendance-scale textarea {
+  font-size: var(--attendance-body-size) !important;
+  line-height: 1.4 !important;
+}
+
+.attendance-scale button svg,
+.attendance-scale th svg,
+.attendance-scale td svg,
+.attendance-scale h3 svg,
+.attendance-scale h4 svg {
+  width: var(--attendance-icon-size) !important;
+  height: var(--attendance-icon-size) !important;
+}
+
+.attendance-scale .attendance-card {
+  padding: var(--attendance-card-padding) !important;
+  border-radius: 1rem !important;
+}
+
+/* Student grades sizing harmonized with dashboard header/sidebar */
+.grades-scale {
+  --grades-heading-size: 1.125rem;
+  --grades-subheading-size: 0.9375rem;
+  --grades-body-size: 0.875rem;
+  --grades-icon-size: 1rem;
+  --grades-card-padding: 1rem;
+}
+
+@media (min-width: 640px) {
+  .grades-scale {
+    --grades-heading-size: 1.25rem;
+    --grades-subheading-size: 1rem;
+    --grades-body-size: 0.875rem;
+    --grades-icon-size: 1rem;
+    --grades-card-padding: 1.25rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .grades-scale {
+    --grades-heading-size: 1.375rem;
+    --grades-subheading-size: 1.0625rem;
+    --grades-body-size: 0.9375rem;
+    --grades-icon-size: 1rem;
+    --grades-card-padding: 1.5rem;
+  }
+}
+
+.grades-scale h1,
+.grades-scale h2 {
+  font-size: var(--grades-heading-size) !important;
+  line-height: 1.3 !important;
+}
+
+.grades-scale h3,
+.grades-scale h4,
+.grades-scale h5,
+.grades-scale h6 {
+  font-size: var(--grades-subheading-size) !important;
+  line-height: 1.35 !important;
+}
+
+.grades-scale p:not([class*="text-"]),
+.grades-scale span:not([class*="text-"]),
+.grades-scale button:not([class*="text-"]),
+.grades-scale label:not([class*="text-"]),
+.grades-scale td:not([class*="text-"]),
+.grades-scale th:not([class*="text-"]),
+.grades-scale input:not([class*="text-"]),
+.grades-scale select:not([class*="text-"]),
+.grades-scale textarea:not([class*="text-"]) {
+  font-size: var(--grades-body-size) !important;
+  line-height: 1.4 !important;
+}
+
+.grades-scale button svg:not([class*="w-"]):not([class*="h-"]),
+.grades-scale th svg:not([class*="w-"]):not([class*="h-"]),
+.grades-scale td svg:not([class*="w-"]):not([class*="h-"]),
+.grades-scale h3 svg:not([class*="w-"]):not([class*="h-"]),
+.grades-scale h4 svg:not([class*="w-"]):not([class*="h-"]) {
+  width: var(--grades-icon-size) !important;
+  height: var(--grades-icon-size) !important;
+}
+
+.grades-scale .grades-card {
+  padding: var(--grades-card-padding) !important;
+  border-radius: 1rem !important;
+}
+
+
