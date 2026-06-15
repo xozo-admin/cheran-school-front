@@ -29,7 +29,7 @@ export const BrandSection = () => {
           onClick={handleLogoClick}
         >
           <Image
-            src="/app_logo.png"
+            src="/app_logo.jpeg"
             alt="App Logo"
             fill
             className="object-cover transition-all duration-500 group-hover:scale-110"
