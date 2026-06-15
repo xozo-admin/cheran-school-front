@@ -6,7 +6,7 @@ const nextConfig = {
   },
   swcMinify: true,      // SWC minifier must be enabled
   compiler: {
-    removeConsole: false, // removes all console.* in production
+    removeConsole: true, // removes all console.* in production
   },
 }
 
