@@ -1,9 +1,10 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
-type UserRole = 'admin' | 'teacher' | 'student' | 'staff';
+type UserRole = 'super_admin' | 'admin' | 'teacher' | 'student' | 'staff';
 
 const ROLE_TO_BASE_PATH: Record<UserRole, string> = {
+  super_admin: '/admin',
   admin: '/admin',
   teacher: '/teacher',
   student: '/student',

@@ -24,7 +24,8 @@ import {
   FaWifi,
   FaLayerGroup,
   FaExpand,
-  FaCompress
+  FaCompress,
+  FaBell
 } from 'react-icons/fa';
 import { toastError, toastInfo, toastSuccess } from '@/lib/toast';
 import { studentApi } from '@/lib/api';
@@ -91,6 +92,16 @@ interface LocationUpdate {
   latitude: number;
   longitude: number;
   speed: number;
+  timestamp: string;
+}
+
+interface ArrivalAlert {
+  title: string;
+  message: string;
+  bus_number: string;
+  stop_name: string;
+  distance_km: number;
+  threshold_km: number;
   timestamp: string;
 }
 
@@ -197,6 +208,7 @@ export default function TransportPage() {
   const [errorMessage, setErrorMessage] = useState('');
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [historyError, setHistoryError] = useState('');
+  const [arrivalAlert, setArrivalAlert] = useState<ArrivalAlert | null>(null);
 
   const academicMonths = [
     'June', 'July', 'August', 'September', 'October', 'November',
@@ -232,6 +244,7 @@ export default function TransportPage() {
   const stopMarkersRef = useRef<LeafletMarker[]>([]);
   const routePathRef = useRef<LeafletPolyline | null>(null);
   const trackingSocketRef = useRef<WebSocket | null>(null);
+  const arrivalAlertTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Calculate nearest stop based on current location
   const calculateNearestStop = useCallback((location: LocationUpdate) => {
@@ -468,6 +481,39 @@ export default function TransportPage() {
     socket.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data);
+        if (payload.type === 'arrival_alert') {
+          const nextAlert: ArrivalAlert = {
+            title: payload.title || 'Bus arriving soon',
+            message: payload.message || 'Your bus is close to your stop.',
+            bus_number: payload.bus_number || myBus.bus_number,
+            stop_name: payload.stop_name || 'your stop',
+            distance_km: Number(payload.distance_km || 0),
+            threshold_km: Number(payload.threshold_km || 1),
+            timestamp: payload.timestamp || new Date().toISOString(),
+          };
+
+          setArrivalAlert(nextAlert);
+          toastSuccess(nextAlert.message);
+
+          if (arrivalAlertTimerRef.current) {
+            clearTimeout(arrivalAlertTimerRef.current);
+          }
+          arrivalAlertTimerRef.current = setTimeout(() => {
+            setArrivalAlert(null);
+            arrivalAlertTimerRef.current = null;
+          }, 20000);
+          return;
+        }
+
+        if (
+          payload.type === 'ws_ack' ||
+          payload.type === 'ws_error' ||
+          payload.latitude === undefined ||
+          payload.longitude === undefined
+        ) {
+          return;
+        }
+
         const nextLocation: LocationUpdate = {
           latitude: payload.latitude,
           longitude: payload.longitude,
@@ -580,7 +626,7 @@ export default function TransportPage() {
         trackingSocketRef.current = null;
       }
     };
-  }, [activeTab, connectLiveTracking, initializeMap, currentLocation, showMap, updateBusMarker]);
+  }, [activeTab, connectLiveTracking, initializeMap, showMap, updateBusMarker]);
 
   useEffect(() => {
     applyTileLayer(mapStyle);
@@ -602,6 +648,10 @@ export default function TransportPage() {
 
   useEffect(() => {
     return () => {
+      if (arrivalAlertTimerRef.current) {
+        clearTimeout(arrivalAlertTimerRef.current);
+        arrivalAlertTimerRef.current = null;
+      }
       resetMap();
     };
   }, [resetMap]);
@@ -1016,6 +1066,45 @@ export default function TransportPage() {
                   </span>
                 </div>
               </div>
+
+              {arrivalAlert && (
+                <div className="overflow-hidden rounded-2xl border border-emerald-200 bg-white shadow-lg dark:border-emerald-800 dark:bg-gray-800">
+                  <div className="h-1.5 bg-gradient-to-r from-emerald-500 via-teal-500 to-blue-500" />
+                  <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+                    <div className="flex items-start gap-4">
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700 shadow-sm dark:bg-emerald-900/30 dark:text-emerald-300">
+                        <FaBell className="text-xl animate-pulse" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+                          Bus arriving soon
+                        </p>
+                        <h3 className="mt-1 text-lg font-bold text-gray-900 dark:text-white">
+                          {arrivalAlert.bus_number} is near {arrivalAlert.stop_name}
+                        </h3>
+                        <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+                          {arrivalAlert.message}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 sm:min-w-[220px]">
+                      <div className="rounded-lg bg-emerald-50 px-3 py-2 text-center dark:bg-emerald-900/20">
+                        <p className="text-xs font-medium text-emerald-700 dark:text-emerald-300">Distance</p>
+                        <p className="mt-1 text-base font-bold text-emerald-900 dark:text-emerald-100">
+                          {arrivalAlert.distance_km.toFixed(2)} km
+                        </p>
+                      </div>
+                      <div className="rounded-lg bg-blue-50 px-3 py-2 text-center dark:bg-blue-900/20">
+                        <p className="text-xs font-medium text-blue-700 dark:text-blue-300">Alert range</p>
+                        <p className="mt-1 text-base font-bold text-blue-900 dark:text-blue-100">
+                          {arrivalAlert.threshold_km.toFixed(0)} km
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className={`bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 ${isFullscreen ? 'fixed inset-0 z-[999] m-0 rounded-none overflow-hidden' : ''}`}>
                 <div className="flex flex-wrap items-center justify-between gap-4 mb-4">

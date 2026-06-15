@@ -9,7 +9,7 @@ import { clearAllCookies } from '@/lib/auth';
 interface User {
   id: string;
   username: string;
-  user_type: 'admin' | 'teacher' | 'student' | 'staff';
+  user_type: 'super_admin' | 'admin' | 'teacher' | 'student' | 'staff';
   email?: string;
   name?: string;
   full_name?: string;
@@ -21,6 +21,11 @@ interface User {
   role?: string;
   staff_role?: string;
   department?: string;
+  school_id?: number | null;
+  school_name?: string | null;
+  institution_id?: number | null;
+  institution_name?: string | null;
+  can_access_all_schools?: boolean;
 }
 
 interface AuthContextType {
@@ -100,6 +105,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       role: data.role || data.staff_role,
       staff_role: data.staff_role || data.role,
       department: data.department,
+      school_id: data.school_id ?? null,
+      school_name: data.school_name ?? null,
+      institution_id: data.institution_id ?? null,
+      institution_name: data.institution_name ?? null,
+      can_access_all_schools: Boolean(data.can_access_all_schools),
     };
     setUser(userData);
     Cookies.set('auth_user', JSON.stringify(userData), getCookieOptions(expirationDays));

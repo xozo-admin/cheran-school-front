@@ -14,6 +14,7 @@ import "react-datepicker/dist/react-datepicker.css";
 import { useTheme } from '@/contexts/ThemeContext';
 import { useThemeClasses } from '@/hooks/useThemeClasses';
 import {StudentAttendanceHistory} from '@/components/dashboard/StudentHistory';
+import { SchoolScopeSelector, useSchoolScope } from '@/components/admin/SchoolScopeSelector';
 
 interface AttendanceRecord {
   student_id: string;
@@ -108,6 +109,8 @@ interface AttendanceOverviewChartInlineProps {
   onClassSelect?: (classId: string, className: string, date: string) => void;
   selectedDate: string;
   onDateChange: (date: string) => void;
+  schoolScopeParams?: { school_id?: number };
+  schoolScopeKey?: string;
 }
 
 interface AttendanceChartDataPoint {
@@ -128,7 +131,7 @@ interface AttendanceOverviewTooltipProps {
   }>;
 }
 
-const AttendanceOverviewChartInline = ({ onClassSelect, selectedDate, onDateChange }: AttendanceOverviewChartInlineProps) => {
+const AttendanceOverviewChartInline = ({ onClassSelect, selectedDate, onDateChange, schoolScopeParams, schoolScopeKey }: AttendanceOverviewChartInlineProps) => {
   const { theme } = useTheme();
   const { get, combine } = useThemeClasses();
   const [classReport, setClassReport] = useState<ClassReport[]>([]);
@@ -148,7 +151,7 @@ const AttendanceOverviewChartInline = ({ onClassSelect, selectedDate, onDateChan
       onDateChange(dateToFetch);
     }
     fetchClassReport(dateToFetch);
-  }, [selectedDate]);
+  }, [selectedDate, schoolScopeKey]);
 
   const generateMockData = () => {
     const mockClasses = ['LKG', 'UKG', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
@@ -178,7 +181,7 @@ const AttendanceOverviewChartInline = ({ onClassSelect, selectedDate, onDateChan
   const fetchClassReport = async (date: string) => {
     try {
       setLoading(true);
-      const response = await adminApi.attendance.classReport(date);
+      const response = await adminApi.attendance.classReport(date, schoolScopeParams);
       const data = response.data;
 
       const transformedReport: ClassReport[] = (data.class_report || []).map((cls: any) => ({
@@ -420,6 +423,7 @@ export default function EnhancedAttendanceComponent ()  {
   const [isSmallScreen, setIsSmallScreen] = useState(false);
   const [studentHistoryParams, setStudentHistoryParams] = useState<{studentId: string; studentName: string; year: string} | null>(null);
   const [showHistoryBackButton, setShowHistoryBackButton] = useState(false);
+  const schoolScope = useSchoolScope({ storageKey: "student_attendance_school_scope" });
 
   // Check screen size
   useEffect(() => {
@@ -636,11 +640,21 @@ useEffect(() => {
   // Fetch all classes (standards) on mount
   useEffect(() => {
     fetchClasses();
-  }, []);
+  }, [schoolScope.selectedSchoolId]);
+
+  useEffect(() => {
+    setSelectedClassId('');
+    setSelectedClassName('');
+    setSelectedSectionId('');
+    setSelectedSectionName('');
+    setSections([]);
+    setAttendanceData(null);
+    setViewMode('overview');
+  }, [schoolScope.selectedSchoolId]);
 
   useEffect(() => {
     fetchClassAttendanceReport(overviewDate);
-  }, [overviewDate]);
+  }, [overviewDate, schoolScope.selectedSchoolId]);
 
   // Fetch sections when class is selected
   useEffect(() => {
@@ -662,7 +676,7 @@ useEffect(() => {
 
   const fetchClasses = async () => {
     try {
-      const response = await adminApi.academics.standards();
+      const response = await adminApi.academics.standards(schoolScope.scopeParams);
       if (response.status >= 200 && response.status < 300) {
         const data = response.data;
         setClasses(data);
@@ -691,7 +705,7 @@ useEffect(() => {
 
   const fetchSections = async (classId: string) => {
     try {
-      const response = await adminApi.academics.sections(classId);
+      const response = await adminApi.academics.sections(classId, schoolScope.scopeParams);
       if (response.status >= 200 && response.status < 300) {
         const data = response.data;
         console.log('Sections fetched:', data);
@@ -723,7 +737,7 @@ useEffect(() => {
 
   const fetchClassAttendanceReport = async (dateStr: string) => {
   try {
-    const response = await adminApi.attendance.classReport(dateStr);
+    const response = await adminApi.attendance.classReport(dateStr, schoolScope.scopeParams);
     console.log('Class attendance report response:', response);
     
     // ✅ Proper status check
@@ -754,7 +768,7 @@ const fetchAttendanceData = async () => {
 
     try {
       // Fetch class detail data
-      const detailResponse = await adminApi.attendance.classDetail(selectedClassName, dateStr);
+      const detailResponse = await adminApi.attendance.classDetail(selectedClassName, dateStr, schoolScope.scopeParams);
       const detailData: ClassDetailResponse | any = detailResponse.data;
       
       // If no section is selected, show overall class data
@@ -1021,6 +1035,7 @@ const fetchAttendanceData = async () => {
                 Back
               </button>
             )}
+            <SchoolScopeSelector {...schoolScope} className="w-full sm:w-auto sm:ml-auto" />
           </div>
 
           {/* View Mode Toggle - Three Tabs */}
@@ -1200,6 +1215,8 @@ const fetchAttendanceData = async () => {
                 onClassSelect={handleClassSelectFromChart}
                 selectedDate={overviewDate}
                 onDateChange={setOverviewDate}
+                schoolScopeParams={schoolScope.scopeParams}
+                schoolScopeKey={schoolScope.selectedSchoolId}
               />
             </div>
           </>

@@ -6,6 +6,8 @@ import { toastError, toastSuccess } from '@/lib/toast';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useThemeClasses } from '@/hooks/useThemeClasses';
 import { FaCalendarAlt, FaFilter } from 'react-icons/fa';
+import { RefreshCw } from 'lucide-react';
+import { SchoolScopeSelector, useSchoolScope } from '@/components/admin/SchoolScopeSelector';
 
 interface AdminMeetingRequest {
   id: number;
@@ -36,9 +38,16 @@ const toLocalInput = (iso: string) => {
 
 const toIso = (local: string) => new Date(local).toISOString();
 
+const getApiMessage = (error: any, fallback: string) =>
+  error?.response?.data?.error ||
+  error?.response?.data?.detail ||
+  error?.response?.data?.message ||
+  fallback;
+
 export default function AdminMeetingsPage() {
   const { theme } = useTheme();
   const { get, combine } = useThemeClasses();
+  const schoolScope = useSchoolScope({ storageKey: 'meetings_school_scope' });
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [requests, setRequests] = useState<AdminMeetingRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,7 +58,10 @@ export default function AdminMeetingsPage() {
   const loadRequests = async () => {
     try {
       setLoading(true);
-      const response = await adminApi.meetings.pendingAdminRequests({ status: statusFilter });
+      const response = await adminApi.meetings.pendingAdminRequests({
+        status: statusFilter,
+        ...schoolScope.scopeParams,
+      });
       const list: AdminMeetingRequest[] = response.data?.data || [];
       setRequests(list);
       const nextState: Record<number, ActionFormState> = {};
@@ -62,7 +74,7 @@ export default function AdminMeetingsPage() {
       });
       setFormById(nextState);
     } catch (error: any) {
-      toastError(error?.response?.data?.error || 'Failed to load meeting requests');
+      toastError(getApiMessage(error, 'Failed to load meeting requests'));
     } finally {
       setLoading(false);
     }
@@ -70,7 +82,7 @@ export default function AdminMeetingsPage() {
 
   useEffect(() => {
     loadRequests();
-  }, [statusFilter]);
+  }, [statusFilter, schoolScope.selectedSchoolId]);
 
   const pendingCount = useMemo(
     () => requests.filter((item) => item.status === 'PENDING' || item.status === 'RESCHEDULE_PROPOSED').length,
@@ -95,11 +107,12 @@ export default function AdminMeetingsPage() {
         final_start: toIso(state.finalStart),
         duration_minutes: Number(state.durationMinutes),
         admin_note: state.adminNote,
+        ...schoolScope.scopeParams,
       });
       toastSuccess('Meeting approved');
       await loadRequests();
     } catch (error: any) {
-      toastError(error?.response?.data?.error || 'Approval failed');
+      toastError(getApiMessage(error, 'Approval failed'));
     } finally {
       setActingId(null);
     }
@@ -111,11 +124,12 @@ export default function AdminMeetingsPage() {
       const state = formById[id];
       await adminApi.meetings.rejectAdminRequest(id, {
         admin_note: state.adminNote,
+        ...schoolScope.scopeParams,
       });
       toastSuccess('Meeting rejected');
       await loadRequests();
     } catch (error: any) {
-      toastError(error?.response?.data?.error || 'Reject failed');
+      toastError(getApiMessage(error, 'Reject failed'));
     } finally {
       setActingId(null);
     }
@@ -137,12 +151,13 @@ export default function AdminMeetingsPage() {
         final_start: toIso(state.finalStart),
         duration_minutes: Number(state.durationMinutes),
         admin_note: state.adminNote,
+        ...schoolScope.scopeParams,
       });
       toastSuccess('Meeting approved with new proposed time');
       closeProposeDialog();
       await loadRequests();
     } catch (error: any) {
-      toastError(error?.response?.data?.error || 'Failed to set proposed time');
+      toastError(getApiMessage(error, 'Failed to set proposed time'));
     } finally {
       setActingId(null);
     }
@@ -257,6 +272,16 @@ export default function AdminMeetingsPage() {
             </p>
           </div>
           <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+            <SchoolScopeSelector {...schoolScope} className="w-full sm:w-auto" />
+            <button
+              type="button"
+              onClick={loadRequests}
+              disabled={loading}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 disabled:cursor-wait disabled:opacity-60 sm:text-sm"
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
             <label className={combine('text-xs sm:text-sm font-medium flex items-center gap-2', get('text', 'secondary'))}>
               <FaFilter />
               Status

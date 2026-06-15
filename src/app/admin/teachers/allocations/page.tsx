@@ -35,6 +35,7 @@ import {
 import { useTheme } from '@/contexts/ThemeContext';
 import { useThemeClasses } from '@/hooks/useThemeClasses';
 import { toastSuccess, toastError, toastInfo, toastWarning } from '@/lib/toast';
+import { SchoolScopeSelector, useSchoolScope } from '@/components/admin/SchoolScopeSelector';
 
 interface TeacherAllocation {
   teacher: number;
@@ -86,6 +87,20 @@ interface ClassSection {
   class_teacher?: string;
 }
 
+interface SubjectOption {
+  id: number;
+  name: string;
+  subject_code: string;
+  standard_name: string;
+  standard_id?: number;
+}
+
+interface ClassSubjectGroup {
+  class: string;
+  subject_count: number;
+  subjects: SubjectOption[];
+}
+
 type ViewMode = 'subject-allocations' | 'class-teacher-allocation';
 type SortFieldAllocations = 'teacher_name' | 'subject' | 'class' | 'sections';
 type SortFieldClassTeachers = 'teacher_name' | 'class_name' | 'section_name' | 'academic_year';
@@ -94,6 +109,7 @@ type SortDirection = 'asc' | 'desc';
 export default function TeacherAllocationsPage() {
   const { theme } = useTheme();
   const { get, combine } = useThemeClasses();
+  const schoolScope = useSchoolScope({ storageKey: 'teacher_allocations_school_scope' });
 
   // View mode state
   const [viewMode, setViewMode] = useState<ViewMode>('subject-allocations');
@@ -103,6 +119,7 @@ export default function TeacherAllocationsPage() {
   const [classTeacherAllocations, setClassTeacherAllocations] = useState<ClassTeacherAllocation[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [classSections, setClassSections] = useState<ClassSection[]>([]);
+  const [classSubjectGroups, setClassSubjectGroups] = useState<ClassSubjectGroup[]>([]);
   
   // Loading states
   const [loading, setLoading] = useState(true);
@@ -506,7 +523,8 @@ useEffect(() => {
         fetchSubjectAllocations(),
         fetchClassTeacherAllocations(),
         fetchTeachers(),
-        fetchClassSections()
+        fetchClassSections(),
+        fetchClassSubjects()
       ]);
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -514,13 +532,13 @@ useEffect(() => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [schoolScope.selectedSchoolId]);
 
   /* ================= FETCH SUBJECT ALLOCATIONS ================= */
   const fetchSubjectAllocations = async () => {
     setLoadingSubjectAllocations(true);
     try {
-      const response = await adminApi.teachers.allocationsByClass();
+      const response = await adminApi.teachers.allocationsByClass(schoolScope.scopeParams);
       const data = response.data;
       console.log('Subject Allocations API Response:', data);
       
@@ -541,7 +559,7 @@ useEffect(() => {
         setAllocations(transformedAllocations);
       } else {
         setAllocations([]);
-        toastInfo('No subject allocations found. Add allocations to get started.');
+        // toastInfo('No subject allocations found. Add allocations to get started.');
       }
     } catch (error) {
       console.error('Error fetching subject allocations:', error);
@@ -555,7 +573,7 @@ useEffect(() => {
   const fetchClassTeacherAllocations = async () => {
     setLoadingClassTeachers(true);
     try {
-      const response = await adminApi.teachers.list();
+      const response = await adminApi.teachers.list(schoolScope.scopeParams);
       if (response.status >= 200 && response.status < 300) {
         const teachersData = response.data;
         console.log('Teachers API Response for Class Teachers:', teachersData);
@@ -586,7 +604,7 @@ useEffect(() => {
         setClassTeacherAllocations(classTeacherAllocationsData);
         
         if (classTeacherAllocationsData.length === 0) {
-          toastInfo('No class teachers assigned yet. Assign class teachers to get started.');
+          // toastInfo('No class teachers assigned yet. Assign class teachers to get started.');
         }
       }
     } catch (error) {
@@ -600,7 +618,7 @@ useEffect(() => {
   /* ================= FETCH TEACHERS ================= */
   const fetchTeachers = async () => {
     try {
-      const response = await adminApi.teachers.list();
+      const response = await adminApi.teachers.list(schoolScope.scopeParams);
       if (response.status >= 200 && response.status < 300) {
         const data = response.data;
         const teachersList = Array.isArray(data) ? data : [];
@@ -619,7 +637,7 @@ useEffect(() => {
   /* ================= FETCH CLASS SECTIONS ================= */
   const fetchClassSections = async () => {
     try {
-      const response = await adminApi.academics.standards();
+      const response = await adminApi.academics.standards(schoolScope.scopeParams);
       if (response.status >= 200 && response.status < 300) {
         const data = response.data;
         console.log('Class Sections API Response:', data);
@@ -657,6 +675,18 @@ useEffect(() => {
     }
   };
 
+  /* ================= FETCH CLASS SUBJECTS ================= */
+  const fetchClassSubjects = async () => {
+    try {
+      const response = await adminApi.subjects.viewAll(schoolScope.scopeParams);
+      const classes = response.data?.classes;
+      setClassSubjectGroups(Array.isArray(classes) ? classes : []);
+    } catch (error) {
+      console.error('Error fetching class subjects:', error);
+      toastError('Failed to fetch class subjects.');
+    }
+  };
+
   /* ================= INITIAL DATA LOAD ================= */
   useEffect(() => {
     fetchAllData();
@@ -665,7 +695,12 @@ useEffect(() => {
   /* ================= ADD SUBJECT ALLOCATION ================= */
   const addAllocation = async () => {
     if (!formData.teacher_id || !formData.subject_name || !formData.class_name) {
-      toastInfo('Teacher, Subject, and Class are required.');
+      toastInfo('Teacher, Class, and Subject are required.');
+      return;
+    }
+
+    if (!getSubjectsForClass(formData.class_name).some(subject => subject.name === formData.subject_name)) {
+      toastWarning('Please select a valid subject for the selected class.');
       return;
     }
 
@@ -677,7 +712,8 @@ useEffect(() => {
       classes: [formData.class_name],
       sections: typeof formData.sections === 'string' 
         ? formData.sections.split(',').map(s => s.trim()).filter(Boolean)
-        : formData.sections
+        : formData.sections,
+      ...schoolScope.scopeParams,
     };
 
     try {
@@ -707,13 +743,26 @@ useEffect(() => {
       return;
     }
 
+    const teacherAssignment = getTeacherClassAssignment(classTeacherForm.teacher_id);
+    if (teacherAssignment) {
+      toastWarning(`${teacherAssignment.teacher_name} is already assigned to Class ${teacherAssignment.class_name}-${teacherAssignment.section_name}.`);
+      return;
+    }
+
+    const sectionAssignment = getSectionClassAssignment(classTeacherForm.class_name, classTeacherForm.section_name);
+    if (sectionAssignment) {
+      toastWarning(`Class ${sectionAssignment.class_name}-${sectionAssignment.section_name} already has ${sectionAssignment.teacher_name} assigned.`);
+      return;
+    }
+
     setSaving(true);
 
     const payload = {
       teacher_id: classTeacherForm.teacher_id,
       class_name: classTeacherForm.class_name,
       section: classTeacherForm.section_name,
-      academic_year: classTeacherForm.academic_year
+      academic_year: classTeacherForm.academic_year,
+      ...schoolScope.scopeParams,
     };
 
     try {
@@ -815,11 +864,64 @@ useEffect(() => {
   const currentClassTeachers = sortedClassTeachers.slice(indexOfFirstItemClassTeachers, indexOfLastItemClassTeachers);
 
   /* ================= GET UNIQUE VALUES FOR FILTERS ================= */
-  const uniqueClasses = Array.from(new Set(allocations.map(a => a.class).filter(Boolean)));
-  const uniqueSubjects = Array.from(new Set(allocations.map(a => a.subject).filter(Boolean)));
-  const uniqueClassTeacherClasses = Array.from(
-    new Set(classTeacherAllocations.map(allocation => allocation.class_name).filter(Boolean))
+  const getClassSortValue = (className: string) => {
+    const numeric = Number(className);
+    return Number.isFinite(numeric) ? numeric : Number.MAX_SAFE_INTEGER;
+  };
+
+  const sortClassNames = (classes: string[]) => (
+    [...classes].sort((a, b) => getClassSortValue(a) - getClassSortValue(b) || a.localeCompare(b))
   );
+
+  const allClassOptions = sortClassNames(Array.from(new Set([
+    ...classSections.map(section => section.standard.name),
+    ...classSubjectGroups.map(group => group.class),
+  ].filter(Boolean))));
+
+  const getSubjectsForClass = (className: string) => (
+    (classSubjectGroups.find(group => group.class === className)?.subjects || [])
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name))
+  );
+
+  const getSectionsForClass = (className: string) => (
+    classSections
+      .filter(section => !className || section.standard.name === className)
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name))
+  );
+
+  const getTeacherClassAssignment = (teacherId: string) => (
+    classTeacherAllocations.find(allocation => allocation.teacher_id === teacherId && allocation.is_active !== false)
+  );
+
+  const getSectionClassAssignment = (className: string, sectionName: string) => (
+    classTeacherAllocations.find(allocation =>
+      allocation.class_name === className &&
+      allocation.section_name === sectionName &&
+      allocation.is_active !== false
+    )
+  );
+
+  const isClassFullyAssigned = (className: string) => {
+    const sections = getSectionsForClass(className);
+    return sections.length > 0 && sections.every(section => Boolean(getSectionClassAssignment(className, section.name)));
+  };
+
+  const selectedClassSubjects = getSubjectsForClass(formData.class_name);
+  const selectedClassSections = getSectionsForClass(classTeacherForm.class_name);
+  const selectedTeacherClassAssignment = classTeacherForm.teacher_id
+    ? getTeacherClassAssignment(classTeacherForm.teacher_id)
+    : undefined;
+  const selectedSectionClassAssignment = classTeacherForm.class_name && classTeacherForm.section_name
+    ? getSectionClassAssignment(classTeacherForm.class_name, classTeacherForm.section_name)
+    : undefined;
+
+  const uniqueClasses = sortClassNames(Array.from(new Set(allocations.map(a => a.class).filter(Boolean))));
+  const uniqueSubjects = Array.from(new Set(allocations.map(a => a.subject).filter(Boolean)));
+  const uniqueClassTeacherClasses = sortClassNames(Array.from(
+    new Set(classTeacherAllocations.map(allocation => allocation.class_name).filter(Boolean))
+  ));
 
   /* ================= STATS ================= */
   const totalSubjectAllocations = allocations.length;
@@ -925,6 +1027,16 @@ useEffect(() => {
 
   /* ================= HANDLE FORM CHANGE ================= */
   const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    if (e.target.name === 'class_name') {
+      setFormData({
+        ...formData,
+        class_name: e.target.value,
+        subject_name: '',
+        sections: '',
+      });
+      return;
+    }
+
     setFormData({
       ...formData,
       [e.target.name]: e.target.value
@@ -932,6 +1044,15 @@ useEffect(() => {
   };
 
   const handleClassTeacherFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    if (e.target.name === 'class_name') {
+      setClassTeacherForm({
+        ...classTeacherForm,
+        class_name: e.target.value,
+        section_name: '',
+      });
+      return;
+    }
+
     setClassTeacherForm({
       ...classTeacherForm,
       [e.target.name]: e.target.value
@@ -966,6 +1087,7 @@ useEffect(() => {
             </div>
             
             <div className="flex flex-wrap items-center gap-2 sm:gap-3"> 
+              <SchoolScopeSelector {...schoolScope} className="w-full sm:w-auto" />
               {showRedirectBackButton && (
                 <button
                   onClick={handleRedirectBack}
@@ -1872,7 +1994,7 @@ useEffect(() => {
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 animate-fade-in backdrop-blur-sm">
             <div className={combine(
               getCardClass('purple'),
-              "max-w-md w-full shadow-2xl"
+              "max-w-lg w-full shadow-2xl"
             )}>
               <div className="flex justify-between items-center mb-4">
                 <h2 className={combine("text-lg font-bold", get('text', 'primary'))}>Add Subject Allocation</h2>
@@ -1910,33 +2032,85 @@ useEffect(() => {
                 
                 <div>
                   <label className={combine("block text-sm font-medium mb-2", get('text', 'primary'))}>
-                    Subject *
-                  </label>
-                  <input
-                    type="text"
-                    name="subject_name"
-                    value={formData.subject_name}
-                    onChange={handleFormChange}
-                    required
-                    className={getInputClass()}
-                    placeholder="Mathematics"
-                  />
-                </div>
-                
-                <div>
-                  <label className={combine("block text-sm font-medium mb-2", get('text', 'primary'))}>
                     Class *
                   </label>
-                  <input
-                    type="text"
+                  <select
                     name="class_name"
                     value={formData.class_name}
                     onChange={handleFormChange}
                     required
                     className={getInputClass()}
-                    placeholder="10"
-                  />
+                  >
+                    <option value="">Select Class</option>
+                  {allClassOptions.map(cls => (
+                    <option key={cls} value={cls}>Class {cls}</option>
+                  ))}
+                </select>
+              </div>
+                
+                <div>
+                  <label className={combine("block text-sm font-medium mb-2", get('text', 'primary'))}>
+                    Subject *
+                  </label>
+                  <select
+                    name="subject_name"
+                    value={formData.subject_name}
+                    onChange={handleFormChange}
+                    required
+                    className={getInputClass()}
+                    disabled={!formData.class_name || selectedClassSubjects.length === 0}
+                  >
+                    <option value="">
+                      {!formData.class_name
+                        ? 'Select class first'
+                        : selectedClassSubjects.length === 0
+                          ? 'No subjects for selected class'
+                          : 'Select Subject'}
+                    </option>
+                    {selectedClassSubjects.map(subject => (
+                      <option key={subject.id} value={subject.name}>
+                        {subject.name} ({subject.subject_code})
+                      </option>
+                    ))}
+                  </select>
                 </div>
+
+                {formData.class_name && (
+                  <div className={combine(
+                    "rounded-xl border p-3",
+                    theme === 'dark' ? 'bg-purple-900/20 border-purple-800' : 'bg-purple-50 border-purple-200'
+                  )}>
+                    <div className="flex items-start gap-3">
+                      <FaBookOpen className={combine("mt-0.5 text-sm", theme === 'dark' ? 'text-purple-300' : 'text-purple-600')} />
+                      <div>
+                        <p className={combine("text-xs font-semibold", get('text', 'primary'))}>
+                          Class {formData.class_name} Subjects
+                        </p>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {selectedClassSubjects.length > 0 ? selectedClassSubjects.map(subject => {
+                            const subjectColor = getSubjectColor(subject.name);
+                            return (
+                              <span
+                                key={subject.id}
+                                className={combine(
+                                  "rounded-full px-2 py-1 text-[11px] font-medium border",
+                                  subjectColor ? '' : getStatusBadgeClass('info')
+                                )}
+                                style={subjectColor ? getSubjectGradientStyle(subjectColor) : undefined}
+                              >
+                                {subject.name}
+                              </span>
+                            );
+                          }) : (
+                            <span className={combine("text-xs", get('text', 'secondary'))}>
+                              Add subjects for this class before allocation.
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 
               </div>
               
@@ -1949,7 +2123,7 @@ useEffect(() => {
                 </button>
                 <button
                   onClick={addAllocation}
-                  disabled={saving}
+                  disabled={saving || !formData.teacher_id || !formData.class_name || !formData.subject_name}
                   className={combine(
                     getPrimaryButtonClass(),
                     "flex-1 flex items-center justify-center gap-2 text-sm",
@@ -1981,7 +2155,7 @@ useEffect(() => {
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 animate-fade-in backdrop-blur-sm">
             <div className={combine(
               getCardClass('green'),
-              "max-w-md w-full shadow-2xl"
+              "max-w-lg w-full shadow-2xl"
             )}>
               <div className="flex justify-between items-center mb-4">
                 <h2 className={combine("text-lg font-bold", get('text', 'primary'))}>Assign Class Teacher</h2>
@@ -2009,12 +2183,25 @@ useEffect(() => {
                     className={getInputClass()}
                   >
                     <option value="">Select Teacher</option>
-                    {teachers.map(teacher => (
-                      <option key={teacher.id} value={teacher.teacher_id}>
-                        {teacher.name} ({teacher.teacher_id}) - {teacher.department}
-                      </option>
-                    ))}
+                    {teachers.map(teacher => {
+                      const assignment = getTeacherClassAssignment(teacher.teacher_id);
+                      return (
+                        <option
+                          key={teacher.id}
+                          value={teacher.teacher_id}
+                          disabled={Boolean(assignment)}
+                        >
+                          {teacher.name} ({teacher.teacher_id}) - {teacher.department}
+                          {assignment ? ` - Assigned to Class ${assignment.class_name}-${assignment.section_name}` : ''}
+                        </option>
+                      );
+                    })}
                   </select>
+                  {selectedTeacherClassAssignment && (
+                    <p className={combine("text-xs mt-1", theme === 'dark' ? 'text-amber-300' : 'text-amber-700')}>
+                      Already assigned to Class {selectedTeacherClassAssignment.class_name}-{selectedTeacherClassAssignment.section_name}
+                    </p>
+                  )}
                 </div>
                 
                 <div>
@@ -2029,10 +2216,20 @@ useEffect(() => {
                     className={getInputClass()}
                   >
                     <option value="">Select Class</option>
-                    {Array.from(new Set(classSections.map(s => s.standard.name))).map(cls => (
-                      <option key={cls} value={cls}>Class {cls}</option>
-                    ))}
+                    {allClassOptions.map(cls => {
+                      const fullyAssigned = isClassFullyAssigned(cls);
+                      return (
+                        <option key={cls} value={cls} disabled={fullyAssigned}>
+                          Class {cls}{fullyAssigned ? ' - All sections assigned' : ''}
+                        </option>
+                      );
+                    })}
                   </select>
+                  {classTeacherForm.class_name && selectedClassSections.length === 0 && (
+                    <p className={combine("text-xs mt-1", theme === 'dark' ? 'text-amber-300' : 'text-amber-700')}>
+                      No sections found for this class.
+                    </p>
+                  )}
                 </div>
                 
                 <div>
@@ -2047,17 +2244,41 @@ useEffect(() => {
                     className={getInputClass()}
                   >
                     <option value="">Select Section</option>
-                    {classSections
-                      .filter(s => !s.class_teacher && (!classTeacherForm.class_name || s.standard.name === classTeacherForm.class_name))
-                      .map(section => (
-                        <option key={section.id} value={section.name}>
+                    {selectedClassSections.map(section => {
+                      const assignment = getSectionClassAssignment(section.standard.name, section.name);
+                      return (
+                        <option key={section.id} value={section.name} disabled={Boolean(assignment)}>
                           Section {section.name} - Class {section.standard.name}
+                          {assignment ? ` - ${assignment.teacher_name}` : ''}
                         </option>
-                      ))}
+                      );
+                    })}
                   </select>
                   <p className={combine("text-xs mt-1", get('text', 'tertiary'))}>
-                    Only shows sections without a class teacher
+                    Assigned teachers and occupied sections stay visible but disabled.
                   </p>
+                  {selectedSectionClassAssignment && (
+                    <p className={combine("text-xs mt-1", theme === 'dark' ? 'text-amber-300' : 'text-amber-700')}>
+                      This section already has {selectedSectionClassAssignment.teacher_name}.
+                    </p>
+                  )}
+                </div>
+
+                <div className={combine(
+                  "rounded-xl border p-3",
+                  theme === 'dark' ? 'bg-green-900/20 border-green-800' : 'bg-green-50 border-green-200'
+                )}>
+                  <div className="flex items-start gap-3">
+                    <FaInfoCircle className={combine("mt-0.5 text-sm", theme === 'dark' ? 'text-green-300' : 'text-green-600')} />
+                    <div>
+                      <p className={combine("text-xs font-semibold", get('text', 'primary'))}>
+                        Assignment Rules
+                      </p>
+                      <p className={combine("text-xs mt-1", get('text', 'secondary'))}>
+                        One teacher can be class teacher for one section, and each section can have only one class teacher in the active academic year.
+                      </p>
+                    </div>
+                  </div>
                 </div>
                
               </div>
@@ -2071,7 +2292,14 @@ useEffect(() => {
                 </button>
                 <button
                   onClick={assignClassTeacher}
-                  disabled={saving}
+                  disabled={
+                    saving ||
+                    !classTeacherForm.teacher_id ||
+                    !classTeacherForm.class_name ||
+                    !classTeacherForm.section_name ||
+                    Boolean(selectedTeacherClassAssignment) ||
+                    Boolean(selectedSectionClassAssignment)
+                  }
                   className={combine(
                     getPrimaryButtonClass(),
                     "flex-1 flex items-center justify-center gap-2 text-sm",

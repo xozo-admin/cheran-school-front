@@ -2,11 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { useThemeClasses } from '@/hooks/useThemeClasses';
 import { adminApi } from '@/lib/api';
 import { clearAllCookies } from '@/lib/auth';
+import { useAuth } from '@/contexts/AuthContext';
 
 import {
   FaTachometerAlt,
@@ -37,9 +37,12 @@ import {
   FaMapMarkerAlt,
   FaFileInvoiceDollar,
   FaHotel,
+  FaCog,
+  FaUserShield,
 } from 'react-icons/fa';
 import { FiLogOut } from 'react-icons/fi';
 import { toastSuccess, toastError } from '@/lib/toast';
+import { Sparkles } from 'lucide-react';
 
 interface SidebarProps {
   collapsed: boolean;
@@ -68,10 +71,13 @@ interface AdminProfile {
   email: string;
   phone: string;
   user_type: string;
+  school_name?: string | null;
+  institution_name?: string | null;
 }
 
 export const Sidebar = ({ collapsed, onToggle, isMobile = false, onCloseMobile }: SidebarProps) => {
   const { get, combine } = useThemeClasses();
+  const { user } = useAuth();
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
   const [adminProfile, setAdminProfile] = useState<AdminProfile | null>(null);
   const [loading, setLoading] = useState(false);
@@ -107,8 +113,8 @@ export const Sidebar = ({ collapsed, onToggle, isMobile = false, onCloseMobile }
 
 
   const sidebarHeaderClasses = combine(
-    'p-4 flex items-center justify-between',
-    // get('border', 'primary')
+    'flex items-center',
+    collapsed && !isMobileLikeView ? 'justify-center px-2 py-4' : 'justify-between p-4'
   );
 
   const toggleButtonClasses = combine(
@@ -332,7 +338,8 @@ const isSubItemActive = (link: string): boolean => {
     if (!adminProfile) return 'Super Administrator';
     
     const userType = adminProfile.user_type;
-    if (userType === 'admin') return 'Administrator';
+    if (userType === 'super_admin') return adminProfile.institution_name || 'Institution Super Admin';
+    if (userType === 'admin') return adminProfile.school_name || 'School Administrator';
     return userType?.replace('_', ' ') || 'Super Administrator';
   };
 
@@ -366,8 +373,7 @@ const isSubItemActive = (link: string): boolean => {
       subItems: [
         { label: 'All Students', link: '/admin/students/allstudents', icon: <FaUsers className="w-4 h-4" /> },
         { label: 'Attendance', link: '/admin/students/attendance', icon: <FaUserCheck className="w-4 h-4" /> },
-        { label: 'Grades', link: '/admin/students/grades', icon: <FaChartLine className="w-4 h-4" /> },
-        { label: 'Promotions', link: '/admin/students/promotion', icon: <FaChartLine className="w-4 h-4" /> },
+        { label: 'Grades', link: '/admin/students/grades', icon: <FaChartLine className="w-4 h-4" /> }
       ]
     },
     {
@@ -401,6 +407,7 @@ const isSubItemActive = (link: string): boolean => {
       label: 'Academics',
       icon: <FaBook className="w-5 h-5" />,
       subItems: [
+        { label: 'Promotions', link: '/admin/students/promotion', icon: <Sparkles className="w-4 h-4" /> },
         { label: 'Attendance Config', link: '/admin/academics/attendance', icon: <FaClipboardCheck className="w-4 h-4" /> },
         { label: 'Classes & Sections', link: '/admin/academics/classes', icon: <FaSchool className="w-4 h-4" /> },
         { label: 'Subjects', link: '/admin/academics/subjects', icon: <FaBook className="w-4 h-4" /> },
@@ -448,12 +455,37 @@ const isSubItemActive = (link: string): boolean => {
       icon: <FaBullhorn className="w-5 h-5" />,
       link: '/admin/communications/announcements'
     },
-    {
-      id: 'meetings',
-      label: 'Meetings',
-      icon: <FaCalendarAlt className="w-5 h-5" />,
-      link: '/admin/meetings'
-    },
+    ...(user?.user_type !== 'super_admin'
+      ? [
+          {
+            id: 'meetings',
+            label: 'Meetings',
+            icon: <FaCalendarAlt className="w-5 h-5" />,
+            link: '/admin/meetings'
+          },
+          {
+            id: 'settings',
+            label: 'Settings',
+            icon: <FaCog className="w-5 h-5" />,
+            link: '/admin/settings'
+          }
+        ]
+      : []),
+    ...(user?.user_type === 'super_admin'
+      ? [
+          {
+            id: 'institution',
+            label: 'Institution',
+            icon: <FaUserShield className="w-5 h-5" />,
+            subItems: [
+              { label: 'Meetings', link: '/admin/meetings', icon: <FaCalendarAlt className="w-4 h-4" /> },
+              { label: 'Settings', link: '/admin/settings', icon: <FaCog className="w-4 h-4" /> },
+              { label: 'Schools', link: '/admin/schools', icon: <FaSchool className="w-4 h-4" /> },
+              { label: 'School Admins', link: '/admin/admin-creation', icon: <FaUserShield className="w-4 h-4" /> },
+            ]
+          }
+        ]
+      : []),
     
   ];
 
@@ -478,17 +510,10 @@ const isSubItemActive = (link: string): boolean => {
     >
       {/* Sidebar Header */}
       <div className={sidebarHeaderClasses}>
-        {(!collapsed || isMobileLikeView) && (
+        {(!collapsed || isMobileLikeView) ? (
           <div className="flex items-center space-x-3">
-            <div className="relative h-12 w-12 overflow-hidden rounded-lg bg-white">
-              <Image
-                src="/app_logo.png"
-                alt="App logo"
-                fill
-                sizes="48px"
-                className="object-contain p-0.5"
-                priority
-              />
+            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-gradient-to-r from-blue-500 to-blue-600 shadow-sm">
+              <FaSchool className="h-6 w-6 text-white" aria-hidden="true" />
             </div>
             <div>
               <h2 className={combine("font-bold text-base", get('text', 'primary'))}>
@@ -499,14 +524,25 @@ const isSubItemActive = (link: string): boolean => {
               </p>
             </div>
           </div>
+        ) : (
+          <button
+            type="button"
+            onClick={onToggle}
+            className="group relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-[var(--color-border-primary)] transition-all hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[var(--color-accent-primary)]"
+            aria-label="Expand sidebar"
+            title="Expand sidebar"
+          >
+            <FaSchool className="h-5 w-5 text-blue-600 transition-opacity group-hover:opacity-20 group-focus-visible:opacity-20" aria-hidden="true" />
+            <FaChevronRight className="absolute text-sm text-[var(--color-text-primary)] opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
+          </button>
         )}
-        {!isMobile && !isCompactScreen && (
+        {!isMobile && !isCompactScreen && !collapsed && (
           <button
             onClick={onToggle}
             className={toggleButtonClasses}
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-label="Collapse sidebar"
           >
-            {collapsed ? <FaChevronRight /> : <FaChevronLeft />}
+            <FaChevronLeft />
           </button>
         )}
       </div>

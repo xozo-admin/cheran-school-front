@@ -455,10 +455,12 @@ const FullScreenActivitiesModal = ({
 // Main Recent Activities Component
 export const RecentActivities = ({
   isFullScreen = false,
-  onCloseFullScreen = () => { }
+  onCloseFullScreen = () => { },
+  compact = false,
 }: {
   isFullScreen?: boolean;
   onCloseFullScreen?: () => void;
+  compact?: boolean;
 }) => {
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [summary, setSummary] = useState<RecentActivitiesResponse['summary'] | null>(null);
@@ -625,9 +627,12 @@ export const RecentActivities = ({
     setInternalFullScreen(true);
   };
 
+  const previewActivities = activities.slice(0, visibleCount || 1);
+  const shouldSlidePreview = hasPreviewOverflow && activities.length > 1;
+
   return (
     <>
-      <div className="px-2 sm:px-3 h-[70vh] max-h-[420px] sm:h-[72vh] sm:max-h-[460px] lg:h-[450px] lg:max-h-none flex flex-col">
+      <div className={`${compact ? 'px-0 h-full min-h-[300px]' : 'px-2 sm:px-3 h-[70vh] max-h-[420px] sm:h-[72vh] sm:max-h-[460px] lg:h-[450px] lg:max-h-none'} flex flex-col`}>
 
         {/* Activities List */}
         <div className="flex-1">
@@ -661,12 +666,24 @@ export const RecentActivities = ({
 ) : (
   <div className="h-full flex flex-col">
     {/* Preview List Container */}
-    <div ref={previewListRef} className="flex-1 overflow-hidden">
-      <div className="space-y-3 pr-2">
-        {activities.slice(0, visibleCount || 1).map((activity, index) => (
-          <ActivityCardMinimal key={index} activity={activity} />
-        ))}
-      </div>
+    <div ref={previewListRef} className="recent-activities-preview relative flex-1 overflow-hidden rounded-xl">
+      {shouldSlidePreview ? (
+        <div className="recent-activities-slide-stack pr-1 sm:pr-2">
+          {[0, 1].map((loopIndex) => (
+            <div key={loopIndex} className="space-y-3 pb-3">
+              {activities.map((activity, index) => (
+                <ActivityCardMinimal key={`${loopIndex}-${index}`} activity={activity} />
+              ))}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-3 pr-1 sm:pr-2">
+          {previewActivities.map((activity, index) => (
+            <ActivityCardMinimal key={index} activity={activity} />
+          ))}
+        </div>
+      )}
     </div>
 
     {/* View More Button - Only shown when there's overflow */}
@@ -716,6 +733,30 @@ export const RecentActivities = ({
       />
 
       <style jsx>{`
+        .recent-activities-preview {
+          -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 18px, #000 calc(100% - 18px), transparent 100%);
+          mask-image: linear-gradient(to bottom, transparent 0, #000 18px, #000 calc(100% - 18px), transparent 100%);
+        }
+
+        .recent-activities-slide-stack {
+          animation: recent-activities-slide-down 28s linear infinite;
+          transform: translateY(-50%);
+          will-change: transform;
+        }
+
+        .recent-activities-preview:hover .recent-activities-slide-stack {
+          animation-play-state: paused;
+        }
+
+        @keyframes recent-activities-slide-down {
+          from {
+            transform: translateY(-50%);
+          }
+          to {
+            transform: translateY(0);
+          }
+        }
+
         .custom-scrollbar::-webkit-scrollbar {
           width: 6px;
         }

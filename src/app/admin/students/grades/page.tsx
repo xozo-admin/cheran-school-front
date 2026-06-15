@@ -49,6 +49,7 @@ import {
   ResponsiveContainer, LineChart, Line, AreaChart, Area, RadarChart, PolarGrid,
   PolarAngleAxis, PolarRadiusAxis, Radar
 } from 'recharts';
+import { SchoolScopeSelector, useSchoolScope } from '@/components/admin/SchoolScopeSelector';
 
 // Interfaces based on API structure
 interface ExamTerm {
@@ -204,6 +205,7 @@ export default function AdminExamsPage() {
   const [sections, setSections] = useState<Section[]>([]);
   const [expandedStudentId, setExpandedStudentId] = useState<string | null>(null);
   const [subjectsPopupSchedule, setSubjectsPopupSchedule] = useState<ExamSchedule | null>(null);
+  const schoolScope = useSchoolScope({ storageKey: "student_grades_school_scope" });
 
   const [availableExamTypes, setAvailableExamTypes] = useState<string[]>([]);
 
@@ -222,6 +224,21 @@ const [autoOpenResultsFromOverview, setAutoOpenResultsFromOverview] = useState(f
 // Add this new state for student tab filtered exam types
 const [studentAvailableExamTypes, setStudentAvailableExamTypes] = useState<string[]>([]);
 
+const withSchoolScopeQuery = (params?: string | URLSearchParams) => {
+  const query = new URLSearchParams(typeof params === 'string' ? params : params?.toString() || '');
+  if (schoolScope.scopeParams.school_id) {
+    query.set('school_id', String(schoolScope.scopeParams.school_id));
+  }
+  return query.toString();
+};
+
+const addSchoolScope = (params: URLSearchParams) => {
+  if (schoolScope.scopeParams.school_id) {
+    params.set('school_id', String(schoolScope.scopeParams.school_id));
+  }
+  return params;
+};
+
 // Add this effect to fetch exam types for student tab based on selected term
 useEffect(() => {
   const fetchStudentExamTypes = async () => {
@@ -237,7 +254,7 @@ useEffect(() => {
         params.set('term', filterTerm);
       }
 
-      const response = await adminApi.exams.schedule(params.toString());
+      const response = await adminApi.exams.schedule(withSchoolScopeQuery(params));
 
       if (response.status >= 200 && response.status < 300) {
         const data = response.data;
@@ -269,7 +286,7 @@ useEffect(() => {
   } else if (activeTab === 'student') {
     setStudentAvailableExamTypes([]);
   }
-}, [filterTerm, activeTab]);
+}, [filterTerm, activeTab, schoolScope.selectedSchoolId]);
 
 
 // Add this new function to fetch student result by ID
@@ -298,7 +315,7 @@ const fetchStudentResultById = async () => {
       params.set('term', filterTerm);
     }
 
-    const response = await adminApi.exams.studentResult(params);
+    const response = await adminApi.exams.studentResult(addSchoolScope(params));
 
     if (response.status >= 200 && response.status < 300) {
       const data = response.data;
@@ -357,7 +374,7 @@ useEffect(() => {
           term: filterTerm
         });
 
-        const response = await adminApi.exams.schedule(params.toString());
+        const response = await adminApi.exams.schedule(withSchoolScopeQuery(params));
 
         if (response.status >= 200 && response.status < 300) {
           const data = response.data;
@@ -384,7 +401,7 @@ useEffect(() => {
     };
 
     fetchExamTypesForFilters();
-}, [filterClass, filterTerm]);
+}, [filterClass, filterTerm, schoolScope.selectedSchoolId]);
 
 useEffect(() => {
   if (typeof window === 'undefined') return;
@@ -557,7 +574,7 @@ const handleRedirectBack = () => {
   const fetchExamTerms = async () => {
     setLoading(true);
     try {
-      const response = await adminApi.exams.terms();
+      const response = await adminApi.exams.terms(schoolScope.scopeParams);
 
       if (response.status >= 200 && response.status < 300) {
         const data = response.data;
@@ -577,7 +594,7 @@ const handleRedirectBack = () => {
   const fetchExamSchedules = async (params?: string) => {
     setLoading(true);
     try {
-      const response = await adminApi.exams.schedule(params);
+      const response = await adminApi.exams.schedule(withSchoolScopeQuery(params));
 
       if (response.status >= 200 && response.status < 300) {
         const data = response.data;
@@ -603,7 +620,7 @@ const handleRedirectBack = () => {
   const fetchTermSchedules = async () => {
     setLoading(true);
     try {
-      const response = await adminApi.exams.termSchedules();
+      const response = await adminApi.exams.termSchedules(withSchoolScopeQuery());
       if (response.status >= 200 && response.status < 300) {
         const data = response.data;
         setTermScheduleGroups(data.data || []);
@@ -623,7 +640,7 @@ const handleRedirectBack = () => {
   // Fetch standards (classes)
   const fetchStandards = async () => {
     try {
-      const response = await adminApi.academics.standards();
+      const response = await adminApi.academics.standards(schoolScope.scopeParams);
 
       if (response.status >= 200 && response.status < 300) {
         const data = response.data;
@@ -653,7 +670,7 @@ const handleRedirectBack = () => {
         term: filterTerm
       });
 
-      const response = await adminApi.exams.classResult(params);
+      const response = await adminApi.exams.classResult(addSchoolScope(params));
 
       if (response.status >= 200 && response.status < 300) {
         const data = response.data;
@@ -697,7 +714,7 @@ const fetchStudentExamDetail = async (studentId: string, studentName: string) =>
       term: filterTerm
     });
 
-    const response = await adminApi.exams.studentResult(params);
+    const response = await adminApi.exams.studentResult(addSchoolScope(params));
 
     if (response.status >= 200 && response.status < 300) {
       const data = response.data;
@@ -796,6 +813,18 @@ useEffect(() => {
   // Handle tab change
  // Handle tab change - update this existing useEffect
 useEffect(() => {
+  setClassResults(null);
+  setStudentDetail(null);
+  setStudentSearchResult(null);
+  setExpandedStudentId(null);
+  setFilterClass('');
+  setFilterSection('');
+  setFilterExam('');
+  setAvailableExamTypes([]);
+  setStudentAvailableExamTypes([]);
+}, [schoolScope.selectedSchoolId]);
+
+useEffect(() => {
   // Only clear states when not switching to student tab with pre-filled data
   if (activeTab !== 'student' && !isRedirectingToStudentTab.current) {
     setExpandedStudentId(null);
@@ -820,7 +849,7 @@ useEffect(() => {
       fetchExamSchedules(); // Fetch schedules for exam types
       break;
   }
-}, [activeTab]);
+}, [activeTab, schoolScope.selectedSchoolId]);
 
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {
@@ -1783,6 +1812,7 @@ useEffect(() => {
                 Back
               </button>
             )}
+            <SchoolScopeSelector {...schoolScope} className="w-full sm:w-auto sm:ml-auto" />
           </div>
 
           {/* Tabs */}

@@ -39,6 +39,7 @@ import {
 import { useTheme } from '@/contexts/ThemeContext';
 import { useThemeClasses } from '@/hooks/useThemeClasses';
 import { toastSuccess, toastError, toastInfo, toastWarning } from '@/lib/toast';
+import { SchoolScopeSelector, useSchoolScope } from '@/components/admin/SchoolScopeSelector';
 
 interface CommonAnnouncement {
   id: number;
@@ -73,6 +74,7 @@ type ViewMode = 'list' | 'add' | 'edit';
 export default function AnnouncementsPage ()  {
   const { theme } = useTheme();
   const { get, combine } = useThemeClasses();
+  const schoolScope = useSchoolScope({ storageKey: 'announcements_school_scope' });
   const [announcementType, setAnnouncementType] = useState<AnnouncementMode>('common');
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [commonAnnouncements, setCommonAnnouncements] = useState<CommonAnnouncement[]>([]);
@@ -240,6 +242,7 @@ export default function AnnouncementsPage ()  {
         sort_dir: sortDirection,
         page: currentPage,
         page_size: itemsPerPage,
+        ...schoolScope.scopeParams,
       });
       const data = response.data;
       
@@ -281,6 +284,7 @@ export default function AnnouncementsPage ()  {
         sort_dir: sortDirection,
         page: currentPage,
         page_size: itemsPerPage,
+        ...schoolScope.scopeParams,
       });
       const data = response.data;
       
@@ -324,7 +328,10 @@ export default function AnnouncementsPage ()  {
     }
 
     try {
-      const response = await adminApi.announcements.commonCreate(commonFormData);
+      const response = await adminApi.announcements.commonCreate({
+        ...commonFormData,
+        ...schoolScope.scopeParams,
+      });
       const data = response.data;
 
 
@@ -379,7 +386,8 @@ export default function AnnouncementsPage ()  {
     // Prepare payload
     const payload = {
       ...staffFormData,
-      target_role: staffFormData.visibility === 'ROLE_SPECIFIC' ? staffFormData.target_role : ''
+      target_role: staffFormData.visibility === 'ROLE_SPECIFIC' ? staffFormData.target_role : '',
+      ...schoolScope.scopeParams,
     };
 
     try {
@@ -437,6 +445,7 @@ export default function AnnouncementsPage ()  {
       const response = await adminApi.announcements.staffUpdate(selectedAnnouncement.id, {
         title: staffFormData.title,
         description: staffFormData.description,
+        ...schoolScope.scopeParams,
       });
       const data = response.data;
 
@@ -474,7 +483,7 @@ export default function AnnouncementsPage ()  {
   // Delete staff announcement
   const deleteStaffAnnouncement = async (id: number) => {
     try {
-      const response = await adminApi.announcements.staffDelete(id);
+      const response = await adminApi.announcements.staffDelete(id, schoolScope.scopeParams);
       if (response.status >= 200 && response.status < 300) {
         toastSuccess('Announcement deleted successfully');
         fetchStaffAnnouncements();
@@ -540,7 +549,10 @@ export default function AnnouncementsPage ()  {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [announcementType, filterDate, filterRole, searchQuery, sortField, sortDirection]);
+    setViewMode('list');
+    setSelectedAnnouncement(null);
+    setShowDeleteConfirm(null);
+  }, [announcementType, filterDate, filterRole, searchQuery, sortField, sortDirection, schoolScope.selectedSchoolId]);
 
   useEffect(() => {
     if (announcementType === 'common') {
@@ -548,7 +560,7 @@ export default function AnnouncementsPage ()  {
     } else {
       fetchStaffAnnouncements();
     }
-  }, [announcementType, filterDate, filterRole, searchQuery, sortField, sortDirection, currentPage]);
+  }, [announcementType, filterDate, filterRole, searchQuery, sortField, sortDirection, currentPage, schoolScope.selectedSchoolId]);
 
   const currentItems = announcementType === 'common' ? commonAnnouncements : staffAnnouncements;
   const activePagination = useMemo(
@@ -607,6 +619,7 @@ export default function AnnouncementsPage ()  {
             </div>
             
             <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 w-full lg:w-auto">
+              <SchoolScopeSelector {...schoolScope} className="w-full sm:w-auto" />
               {viewMode === 'list' ? (
                 <button
                   onClick={startAdd}

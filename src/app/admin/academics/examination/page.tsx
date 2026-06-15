@@ -58,6 +58,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { useThemeClasses } from '@/hooks/useThemeClasses';
 import { requestSidebarCountsRefresh } from '@/lib/sidebar-counts-sync';
 import toast from 'react-hot-toast';
+import { SchoolScopeSelector, useSchoolScope } from '@/components/admin/SchoolScopeSelector';
 
 // ==================== INTERFACES ====================
 interface ExamTerm {
@@ -224,6 +225,7 @@ const formatDateTime = (dateString: string) => {
 export default function ExaminationManage ()  {
   const { theme } = useTheme();
   const { get, combine } = useThemeClasses();
+  const schoolScope = useSchoolScope({ storageKey: 'academics_examination_school_scope' });
   
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'overview' | 'structure' | 'schedule' | 'results' | 'approvals'>('overview');
@@ -508,7 +510,7 @@ export default function ExaminationManage ()  {
   // 1. ADMIN: EXAM TERM MANAGEMENT
   const fetchExamTerms = async () => {
     try {
-      const response = await adminApi.exams.terms();
+      const response = await adminApi.exams.terms(schoolScope.scopeParams);
       const data = response.data;
       setExamTerms(data);
       return data;
@@ -521,7 +523,10 @@ export default function ExaminationManage ()  {
   const createExamTerm = async (termData: any) => {
     setIsCreatingTerm(true);
     try {
-      const response = await adminApi.exams.createTerm(termData);
+      const response = await adminApi.exams.createTerm({
+        ...termData,
+        ...schoolScope.scopeParams,
+      });
       const result = response.data;
       toastSuccess(getSuccessMessage(result?.message, 'Exam term created successfully'));
       return result.data;
@@ -539,6 +544,7 @@ export default function ExaminationManage ()  {
       const response = await adminApi.exams.updateTerm({
         id: termId,
         ...termData,
+        ...schoolScope.scopeParams,
       });
       const result = response.data;
       toastSuccess(getSuccessMessage(result?.message, 'Exam term updated successfully'));
@@ -555,7 +561,7 @@ export default function ExaminationManage ()  {
   // Remove the confirm dialog from here - it's now handled in the UI
   setIsDeleting(termId);
   try {
-    const response = await adminApi.exams.deleteTerm(termId);
+    const response = await adminApi.exams.deleteTerm(termId, schoolScope.scopeParams);
     const result = response.data;
     toastSuccess(getSuccessMessage(result?.message, 'Exam term deleted successfully'));
     return true;
@@ -587,6 +593,7 @@ export default function ExaminationManage ()  {
         exam_type: examType,
         term: term
       });
+      if (schoolScope.scopeParams.school_id) params.set('school_id', String(schoolScope.scopeParams.school_id));
 
       const response = await adminApi.exams.classResult(params);
       const data = response.data;
@@ -611,6 +618,7 @@ export default function ExaminationManage ()  {
         exam_type: examType,
         term: term
       });
+      if (schoolScope.scopeParams.school_id) params.set('school_id', String(schoolScope.scopeParams.school_id));
 
       const response = await adminApi.exams.subjectAnalysis(params);
       const data = response.data;
@@ -633,6 +641,7 @@ export default function ExaminationManage ()  {
         exam_type: examType,
         term: term
       });
+      if (schoolScope.scopeParams.school_id) params.set('school_id', String(schoolScope.scopeParams.school_id));
 
       const response = await adminApi.exams.studentResult(params);
       const data = response.data;
@@ -655,6 +664,7 @@ export default function ExaminationManage ()  {
         exam_type: examType,
         term: term
       });
+      if (schoolScope.scopeParams.school_id) params.set('school_id', String(schoolScope.scopeParams.school_id));
 
       const response = await adminApi.exams.studentMarksDetail(params);
       const data = response.data;
@@ -675,6 +685,7 @@ export default function ExaminationManage ()  {
       if (filterClass) params.append('class', filterClass);
       if (filterTerm) params.append('term', filterTerm);
       if (selectedExamType) params.append('exam_type', selectedExamType);
+      if (schoolScope.scopeParams.school_id) params.append('school_id', String(schoolScope.scopeParams.school_id));
 
       const response = await adminApi.exams.schedule(params.toString());
       const data = response.data;
@@ -689,7 +700,10 @@ export default function ExaminationManage ()  {
   const createExamSchedule = async (scheduleData: any) => {
     setIsCreatingSchedule(true);
     try {
-      const response = await adminApi.exams.createSchedule(scheduleData);
+      const response = await adminApi.exams.createSchedule({
+        ...scheduleData,
+        ...schoolScope.scopeParams,
+      });
       const result = response.data;
       toastSuccess(getSuccessMessage(result?.message, 'Exam schedule created successfully'));
       if (Array.isArray(result?.errors) && result.errors.length > 0) {
@@ -710,6 +724,7 @@ export default function ExaminationManage ()  {
       const response = await adminApi.exams.updateSchedule({
         schedule_id: scheduleId,
         ...scheduleData,
+        ...schoolScope.scopeParams,
       });
       const result = response.data;
       toastSuccess(getSuccessMessage(result?.message, 'Exam schedule updated successfully'));
@@ -727,7 +742,7 @@ const deleteExamSchedule = async (scheduleId: number): Promise<boolean> => {
   // Remove the confirm dialog from here - it's now handled in the UI
   setIsDeleting(scheduleId);
   try {
-    const response = await adminApi.exams.deleteSchedule(scheduleId);
+    const response = await adminApi.exams.deleteSchedule(scheduleId, schoolScope.scopeParams);
     const result = response.data;
     toastSuccess(getSuccessMessage(result?.message, 'Schedule deleted successfully'));
     return true;
@@ -742,7 +757,7 @@ const deleteExamSchedule = async (scheduleId: number): Promise<boolean> => {
   // 14. ADMIN MARK APPROVAL
   const fetchApprovalRequests = async () => {
     try {
-      const response = await adminApi.exams.approvals();
+      const response = await adminApi.exams.approvals(schoolScope.scopeParams);
       const data = response.data;
       const pending = data.pending_approvals || [];
       setMarkRequests(pending);
@@ -772,7 +787,7 @@ const deleteExamSchedule = async (scheduleId: number): Promise<boolean> => {
   // Fetch classes
   const fetchClasses = async () => {
     try {
-      const response = await adminApi.academics.standards();
+      const response = await adminApi.academics.standards(schoolScope.scopeParams);
       const data = response.data;
       setAvailableClasses(data);
       return data;
@@ -830,7 +845,7 @@ const deleteExamSchedule = async (scheduleId: number): Promise<boolean> => {
       setLoading(false);
       setIsLoadingStats(false);
     }
-  }, []);
+  }, [schoolScope.selectedSchoolId]);
 
   // ==================== EVENT HANDLERS ====================
   const handleCreateTerm = async () => {
@@ -910,12 +925,19 @@ const deleteExamSchedule = async (scheduleId: number): Promise<boolean> => {
 
   // ==================== EFFECTS ====================
   useEffect(() => {
+    setFilterClass('');
+    setFilterTerm('');
+    setSelectedExamType('');
+    setClassResult(null);
+    setSubjectAnalysis(null);
+    setStudentResult(null);
+    setStudentMarksDetail(null);
     fetchAllData();
   }, [fetchAllData]);
 
   useEffect(() => {
     fetchExamSchedules();
-  }, [filterClass, filterTerm, selectedExamType]);
+  }, [filterClass, filterTerm, selectedExamType, schoolScope.selectedSchoolId]);
 
   // ==================== RENDER COMPONENTS ====================
   if (loading) {
@@ -964,6 +986,7 @@ const deleteExamSchedule = async (scheduleId: number): Promise<boolean> => {
               </div>
             </div>
             <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full lg:w-auto">
+              <SchoolScopeSelector {...schoolScope} className="w-full sm:w-auto" />
               <div className={combineClasses(
                 "flex items-center gap-2 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl border w-full",
                 get('bg', 'card'),
@@ -1355,6 +1378,8 @@ const deleteExamSchedule = async (scheduleId: number): Promise<boolean> => {
                 examSchedules={examSchedules}
                 examTerms={examTerms}
                 availableClasses={availableClasses}
+                schoolScopeParams={schoolScope.scopeParams}
+                schoolScopeKey={schoolScope.selectedSchoolId}
                 filterClass={filterClass}
                 setFilterClass={setFilterClass}
                 filterTerm={filterTerm}
@@ -1790,6 +1815,8 @@ interface ScheduleTabProps {
   examSchedules: ExamSchedule[];
   examTerms: ExamTerm[];
   availableClasses: Class[];
+  schoolScopeParams?: { school_id?: number };
+  schoolScopeKey?: string;
   filterClass: string;
   setFilterClass: (cls: string) => void;
   filterTerm: string;
@@ -1825,6 +1852,8 @@ const ScheduleTab: React.FC<ScheduleTabProps> = ({
   examSchedules,
   examTerms,
   availableClasses,
+  schoolScopeParams,
+  schoolScopeKey,
   filterClass,
   setFilterClass,
   filterTerm,
@@ -2025,7 +2054,7 @@ const ScheduleTab: React.FC<ScheduleTabProps> = ({
 
       setIsLoadingSubjects(true);
       try {
-        const response = await adminApi.subjects.viewByClass(selectedClassName);
+        const response = await adminApi.subjects.viewByClass(selectedClassName, schoolScopeParams);
         const payload = response?.data;
         const subjects = Array.isArray(payload?.subjects) ? payload.subjects : [];
         setClassSubjects(subjects);
@@ -2038,7 +2067,7 @@ const ScheduleTab: React.FC<ScheduleTabProps> = ({
     };
 
     loadSubjectsByClass();
-  }, [selectedClassName]);
+  }, [selectedClassName, schoolScopeKey]);
 
   return (
     <div className="space-y-6">

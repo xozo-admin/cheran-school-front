@@ -36,6 +36,7 @@ import {
 import { useTheme } from '@/contexts/ThemeContext';
 import { useThemeClasses } from '@/hooks/useThemeClasses';
 import { toastSuccess, toastError, toastInfo } from '@/lib/toast';
+import { SchoolScopeSelector, useSchoolScope } from '@/components/admin/SchoolScopeSelector';
 
 interface InventoryItem {
   id: number;
@@ -98,6 +99,7 @@ export default function ResourcesTransportPage () {
   const { theme } = useTheme();
    const searchParams = useSearchParams();
   const { get, combine } = useThemeClasses();
+  const schoolScope = useSchoolScope({ storageKey: 'inventory_school_scope' });
   const [loading, setLoading] = useState(false);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
@@ -233,6 +235,7 @@ const fetchInventory = useCallback(async (
         search: effectiveSearch || undefined,
         page: effectivePage,
         page_size: itemsPerPage,
+        ...schoolScope.scopeParams,
       });
       const data = response.data;
       if (data.data) {
@@ -290,19 +293,19 @@ const fetchInventory = useCallback(async (
     } finally {
       setLoading(false);
     }
-  }, [searchTerm, currentPage]);
+  }, [searchTerm, currentPage, schoolScope.selectedSchoolId]);
 
   // Fetch staff list
   const fetchStaffList = useCallback(async () => {
     try {
-      const response = await adminApi.staff.list();
+      const response = await adminApi.staff.list(schoolScope.scopeParams);
       const data = response.data;
       setStaffList(data?.data || data || []);
     } catch (error) {
       console.error('Error fetching staff list:', error);
       toastError('Failed to fetch staff list');
     }
-  }, []);
+  }, [schoolScope.selectedSchoolId]);
 
   useEffect(() => {
     const searchParam = searchParams.get('search') || '';
@@ -350,6 +353,7 @@ const fetchInventory = useCallback(async (
           stock_name: inventoryForm.stock_name,
           quantity: inventoryForm.initial_quantity,
         }],
+        ...schoolScope.scopeParams,
       });
       const data = response.data;
 
@@ -375,7 +379,10 @@ const fetchInventory = useCallback(async (
   // Bulk add inventory items
   const bulkAddInventoryItems = async () => {
     try {
-      const response = await adminApi.inventory.createBulk(bulkAddForm);
+      const response = await adminApi.inventory.createBulk({
+        ...bulkAddForm,
+        ...schoolScope.scopeParams,
+      });
       const data = response.data;
 
       if (response.status === 200) {
@@ -402,6 +409,7 @@ const fetchInventory = useCallback(async (
         item_id: editForm.item_id,
         stock_name: editForm.stock_name,
         add_stock: editForm.add_stock || undefined,
+        ...schoolScope.scopeParams,
       });
       const data = response.data;
 
@@ -435,7 +443,7 @@ const handleConfirmedDelete = async () => {
   
   setDeleting(true);
   try {
-    const response = await adminApi.inventory.delete(itemToDelete);
+    const response = await adminApi.inventory.delete(itemToDelete, schoolScope.scopeParams);
     const data = response.data;
 
     if (response.status === 200) {
@@ -486,18 +494,21 @@ const handleConfirmedDelete = async () => {
   };
 
   useEffect(() => {
-    if (!initialLoadDone.current) {
-      fetchStaffList();
-      initialLoadDone.current = true;
-    }
-  }, [fetchStaffList]);
+    fetchStaffList();
+    initialLoadDone.current = true;
+    setCurrentPage(1);
+    setSelectedItem(null);
+    setShowAddInventoryModal(false);
+    setShowBulkAddModal(false);
+    setShowEditModal(false);
+  }, [fetchStaffList, schoolScope.selectedSchoolId]);
 
   // Fetch inventory when view mode or staff type changes, but not on every render
   useEffect(() => {
     if (viewMode === 'inventory' && initialLoadDone.current && isUrlFilterReady) {
       fetchInventory(selectedStaffType);
     }
-  }, [viewMode, selectedStaffType, currentPage, searchTerm, fetchInventory, isUrlFilterReady]);
+  }, [viewMode, selectedStaffType, currentPage, searchTerm, fetchInventory, isUrlFilterReady, schoolScope.selectedSchoolId]);
 
   // Filter staff based on search term
   const filteredStaff = staffList.filter(staff => 
@@ -582,6 +593,7 @@ const handleConfirmedDelete = async () => {
           search: searchTerm || undefined,
           page,
           page_size: exportPageSize,
+          ...schoolScope.scopeParams,
         });
 
         const data = response.data || {};
@@ -680,6 +692,7 @@ const handleConfirmedDelete = async () => {
             </div>
             
             <div className="flex w-full lg:w-auto flex-wrap items-center gap-2 sm:gap-3">
+              <SchoolScopeSelector {...schoolScope} className="w-full sm:w-auto" />
               {showRedirectBackButton && (
                 <button
                   onClick={handleRedirectBack}

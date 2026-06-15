@@ -32,6 +32,7 @@ import {
   FaQrcode,
 } from 'react-icons/fa';
 import { toastError } from '@/lib/toast';
+import { SchoolScopeSelector, useSchoolScope } from '@/components/admin/SchoolScopeSelector';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useThemeClasses } from '@/hooks/useThemeClasses';
 import {
@@ -281,6 +282,7 @@ const monthNames = [
 export default function FinanceFeesOverviewPage() {
   const { theme } = useTheme();
   const { get, combine } = useThemeClasses();
+  const schoolScope = useSchoolScope({ storageKey: 'fee_dashboard_school_scope' });
 
   const [academicYears, setAcademicYears] = useState<AcademicYearOption[]>([]);
   const [selectedYear, setSelectedYear] = useState<string>('');
@@ -309,9 +311,14 @@ export default function FinanceFeesOverviewPage() {
   const loadDashboardData = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const yearParam = selectedYear ? `academic_year=${encodeURIComponent(selectedYear)}` : '';
-    const statsPath = `fees/report/stats-cards/${yearParam ? `?${yearParam}` : ''}`;
-    const overviewPath = `fees/report/overview-chart/${yearParam ? `?${yearParam}&months=${months}` : `?months=${months}`}`;
+    const params = new URLSearchParams();
+    if (selectedYear) params.set('academic_year', selectedYear);
+    params.set('months', String(months));
+    if (schoolScope.scopeParams.school_id) params.set('school_id', String(schoolScope.scopeParams.school_id));
+    const statsParams = new URLSearchParams(params);
+    statsParams.delete('months');
+    const statsPath = `fees/report/stats-cards/${statsParams.toString() ? `?${statsParams.toString()}` : ''}`;
+    const overviewPath = `fees/report/overview-chart/?${params.toString()}`;
 
     const [statsResult, overviewResult] = await Promise.allSettled([
       fetchJson(statsPath),
@@ -342,7 +349,7 @@ export default function FinanceFeesOverviewPage() {
       toastError('Failed to load fee dashboard data');
     }
     setLoading(false);
-  }, [selectedYear, months]);
+  }, [selectedYear, months, schoolScope.selectedSchoolId]);
 
   const loadAuditData = useCallback(async () => {
     setAuditLoading(true);
@@ -365,6 +372,7 @@ export default function FinanceFeesOverviewPage() {
     if (auditSearchQuery.trim()) {
       auditParams.set('q', auditSearchQuery.trim());
     }
+    if (schoolScope.scopeParams.school_id) auditParams.set('school_id', String(schoolScope.scopeParams.school_id));
 
     try {
       const payload = await fetchJson(`audit/admin/logs/?${auditParams.toString()}`) as AuditLogsResponse;
@@ -390,6 +398,7 @@ export default function FinanceFeesOverviewPage() {
     auditDateTo,
     auditAcademicYear,
     selectedYear,
+    schoolScope.selectedSchoolId,
   ]);
 
   const handleRefresh = useCallback(async () => {
@@ -410,7 +419,9 @@ export default function FinanceFeesOverviewPage() {
 
     const loadAcademicYears = async () => {
       try {
-        const payload = await fetchJson('school/academic-years/');
+        const yearParams = new URLSearchParams();
+        if (schoolScope.scopeParams.school_id) yearParams.set('school_id', String(schoolScope.scopeParams.school_id));
+        const payload = await fetchJson(`school/academic-years/${yearParams.toString() ? `?${yearParams.toString()}` : ''}`);
         if (!mounted) return;
 
         const normalized = normalizeAcademicYears(payload);
@@ -431,7 +442,7 @@ export default function FinanceFeesOverviewPage() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [schoolScope.selectedSchoolId]);
 
   useEffect(() => {
     loadDashboardData();
@@ -573,6 +584,7 @@ export default function FinanceFeesOverviewPage() {
             </div>
             
             <div className='flex flex-wrap items-stretch sm:items-center gap-2 sm:gap-3 w-full md:w-auto'>
+              <SchoolScopeSelector {...schoolScope} className="w-full sm:w-auto" />
               {/* Academic Year Filter */}
               <div className="flex items-center gap-2 bg-white/20 backdrop-blur rounded-lg px-2.5 sm:px-3 py-1.5 min-w-0">
                 <FaCalendarAlt className="text-white/80 text-sm" />

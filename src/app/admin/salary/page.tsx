@@ -54,6 +54,7 @@ import { MdOutlineDashboard, MdPayment, MdAttachMoney, MdAccountBalance, MdVerif
 import { useTheme } from '@/contexts/ThemeContext';
 import { useThemeClasses } from '@/hooks/useThemeClasses';
 import { toastSuccess, toastError, toastInfo, toastWarning } from '@/lib/toast';
+import { SchoolScopeSelector, useSchoolScope } from '@/components/admin/SchoolScopeSelector';
 
 // Configuration for gateway mode: defaults to real, can be overridden by env.
 const USE_REAL_GATEWAY = process.env.NEXT_PUBLIC_SALARY_REAL_GATEWAY !== 'false';
@@ -306,6 +307,7 @@ const TRANSFER_OTP_DURATION_SECONDS = 30;
 export default function SalaryManagementPage() {
   const { theme } = useTheme();
   const { get, combine } = useThemeClasses();
+  const schoolScope = useSchoolScope({ storageKey: 'salary_management_school_scope' });
   const [activeTab, setActiveTab] = useState<'staff' | 'teacher' | 'payments' | 'summary' | 'employeeReport'>('staff');
   const [activePaymentTab, setActivePaymentTab] = useState<'staff' | 'teacher'>('staff');
   
@@ -722,7 +724,7 @@ export default function SalaryManagementPage() {
   const fetchTeachers = async () => {
     setLoadingTeachers(true);
     try {
-      const response = await adminApi.teachers.list();
+      const response = await adminApi.teachers.list(schoolScope.scopeParams);
       setTeachers(response.data || []);
     } catch (error) {
       console.error('Error fetching teachers:', error);
@@ -735,7 +737,7 @@ export default function SalaryManagementPage() {
   // Fetch staff list
   const fetchStaffList = async () => {
     try {
-      const response = await adminApi.staff.list();
+      const response = await adminApi.staff.list(schoolScope.scopeParams);
       setStaffList(response.data || []);
     } catch (error) {
       console.error('Error fetching staff list:', error);
@@ -751,6 +753,7 @@ export default function SalaryManagementPage() {
         q: staffSearchQuery.trim() || undefined,
         page: staffCurrentPage,
         page_size: itemsPerPage,
+        ...schoolScope.scopeParams,
       });
       setStaffStructures(response.data.data || []);
       const pagination = response.data?.pagination;
@@ -809,6 +812,7 @@ export default function SalaryManagementPage() {
         staff_type: staffFormData.staff_type,
         base_salary: parseFloat(staffFormData.base_salary),
         late_penalty_percentage: parseFloat(staffFormData.late_penalty_percentage),
+        ...schoolScope.scopeParams,
       });
       
       toastSuccess(response.data.message || 'Salary structure saved successfully');
@@ -839,7 +843,7 @@ export default function SalaryManagementPage() {
 
   const deleteStaffStructure = async (staffType: string) => {
     try {
-      const response = await adminApi.salary.staff.deleteStructure(staffType);
+      const response = await adminApi.salary.staff.deleteStructure(staffType, schoolScope.scopeParams);
       toastSuccess(response.data.message || 'Salary structure deleted successfully');
       fetchStaffStructures();
       fetchSalaryCardStats();
@@ -858,6 +862,7 @@ export default function SalaryManagementPage() {
         q: teacherSearchQuery.trim() || undefined,
         page: teacherCurrentPage,
         page_size: itemsPerPage,
+        ...schoolScope.scopeParams,
       });
       setTeacherStructures(response.data.data || []);
       const pagination = response.data?.pagination;
@@ -916,6 +921,7 @@ export default function SalaryManagementPage() {
         teacher_id: teacherFormData.teacher_id,
         base_salary: parseFloat(teacherFormData.base_salary),
         late_penalty_percentage: parseFloat(teacherFormData.late_penalty_percentage),
+        ...schoolScope.scopeParams,
       });
       
       toastSuccess(response.data.message || 'Teacher salary saved successfully');
@@ -946,7 +952,7 @@ export default function SalaryManagementPage() {
 
   const deleteTeacherStructure = async (teacherId: string) => {
     try {
-      const response = await adminApi.salary.teacher.deleteStructure(teacherId);
+      const response = await adminApi.salary.teacher.deleteStructure(teacherId, schoolScope.scopeParams);
       toastSuccess(response.data.message || 'Teacher salary structure deleted successfully');
       fetchTeacherStructures();
       fetchSalaryCardStats();
@@ -966,6 +972,7 @@ export default function SalaryManagementPage() {
       if (paymentFilters.month) params.month = paymentFilters.month;
       if (paymentFilters.year) params.year = paymentFilters.year;
       if (paymentFilters.status) params.status = paymentFilters.status;
+      Object.assign(params, schoolScope.scopeParams);
 
       const response = await adminApi.salary.payments.staff.list(params);
       setStaffPayments(response.data.data || []);
@@ -985,6 +992,7 @@ export default function SalaryManagementPage() {
       if (paymentFilters.month) params.month = paymentFilters.month;
       if (paymentFilters.year) params.year = paymentFilters.year;
       if (paymentFilters.status) params.status = paymentFilters.status;
+      Object.assign(params, schoolScope.scopeParams);
 
       const response = await adminApi.salary.payments.teacher.list(params);
       setTeacherPayments(response.data.data || []);
@@ -1019,7 +1027,8 @@ export default function SalaryManagementPage() {
       const response = await adminApi.salary.payments.staff.process({
         staff_id: singleProcessData.employeeId,
         month: singleProcessData.month,
-        year: singleProcessData.year
+        year: singleProcessData.year,
+        ...schoolScope.scopeParams,
       });
 
       toastSuccess(response.data.message || 'Salary payment created successfully');
@@ -1048,7 +1057,8 @@ export default function SalaryManagementPage() {
       const response = await adminApi.salary.payments.teacher.process({
         teacher_id: singleProcessData.employeeId,
         month: singleProcessData.month,
-        year: singleProcessData.year
+        year: singleProcessData.year,
+        ...schoolScope.scopeParams,
       });
 
       toastSuccess(response.data.message || 'Salary payment created successfully');
@@ -1192,6 +1202,7 @@ export default function SalaryManagementPage() {
       const data: any = {
         month: bulkProcessData.month,
         year: bulkProcessData.year,
+        ...schoolScope.scopeParams,
       };
       
       if (bulkProcessData.staff_type) {
@@ -1245,6 +1256,7 @@ export default function SalaryManagementPage() {
       const data: any = {
         month: bulkProcessData.month,
         year: bulkProcessData.year,
+        ...schoolScope.scopeParams,
       };
 
       if (bankTransferMode === 'bank') {
@@ -1492,7 +1504,10 @@ export default function SalaryManagementPage() {
   // Update payment
   const updateStaffPayment = async (paymentId: number) => {
     try {
-      const response = await adminApi.salary.payments.staff.update(paymentId, paymentUpdateData);
+      const response = await adminApi.salary.payments.staff.update(paymentId, {
+        ...paymentUpdateData,
+        ...schoolScope.scopeParams,
+      });
       toastSuccess(response.data.message || 'Payment updated successfully');
       setShowPaymentModal(false);
       setSelectedPayment(null);
@@ -1512,7 +1527,10 @@ export default function SalaryManagementPage() {
 
   const updateTeacherPayment = async (paymentId: number) => {
     try {
-      const response = await adminApi.salary.payments.teacher.update(paymentId, paymentUpdateData);
+      const response = await adminApi.salary.payments.teacher.update(paymentId, {
+        ...paymentUpdateData,
+        ...schoolScope.scopeParams,
+      });
       toastSuccess(response.data.message || 'Payment updated successfully');
       setShowPaymentModal(false);
       setSelectedPayment(null);
@@ -1565,7 +1583,8 @@ export default function SalaryManagementPage() {
     try {
       const response = await adminApi.salary.payments.summary({
         month: summaryMonth,
-        year: summaryYear
+        year: summaryYear,
+        ...schoolScope.scopeParams,
       });
       setSalarySummary(response.data.data);
     } catch (error: any) {
@@ -1600,6 +1619,7 @@ export default function SalaryManagementPage() {
         employee_type: employeeType,
         employee_id: employeeId,
         year,
+        ...schoolScope.scopeParams,
       });
       const data = response?.data?.data;
       if (!data) {
@@ -1623,7 +1643,7 @@ export default function SalaryManagementPage() {
   const fetchSalaryCardStats = async (month = paymentFilters.month, year = paymentFilters.year) => {
     setLoadingSalaryCards(true);
     try {
-      const response = await adminApi.salary.payments.cardsOverview({ month, year });
+      const response = await adminApi.salary.payments.cardsOverview({ month, year, ...schoolScope.scopeParams });
       setSalaryCardStats(response.data?.data || null);
     } catch (error) {
       console.error('Error fetching salary card stats:', error);
@@ -1644,12 +1664,12 @@ export default function SalaryManagementPage() {
         staffStructuresResponse,
         teacherStructuresResponse
       ] = await Promise.all([
-        adminApi.staff.list(),
-        adminApi.teachers.list(),
-        adminApi.salary.payments.staff.list({ month: targetMonth, year: targetYear }),
-        adminApi.salary.payments.teacher.list({ month: targetMonth, year: targetYear }),
-        adminApi.salary.staff.listStructures(),
-        adminApi.salary.teacher.listStructures(),
+        adminApi.staff.list(schoolScope.scopeParams),
+        adminApi.teachers.list(schoolScope.scopeParams),
+        adminApi.salary.payments.staff.list({ month: targetMonth, year: targetYear, ...schoolScope.scopeParams }),
+        adminApi.salary.payments.teacher.list({ month: targetMonth, year: targetYear, ...schoolScope.scopeParams }),
+        adminApi.salary.staff.listStructures(schoolScope.scopeParams),
+        adminApi.salary.teacher.listStructures(schoolScope.scopeParams),
       ]);
 
       const allStaff: StaffMember[] = staffListResponse.data || [];
@@ -1711,7 +1731,7 @@ export default function SalaryManagementPage() {
 
   const ensureAssignedStaffTypes = async () => {
     try {
-      const response = await adminApi.salary.staff.listStructures();
+      const response = await adminApi.salary.staff.listStructures(schoolScope.scopeParams);
       const options = Array.from(new Set<string>((response.data?.data || []).map((s: any) => s.staff_type)));
       setAvailableStaffTypeOptions(options);
       return options;
@@ -1888,23 +1908,23 @@ export default function SalaryManagementPage() {
 
   useEffect(() => {
     setStaffCurrentPage(1);
-  }, [staffFilterType, staffSearchQuery]);
+  }, [staffFilterType, staffSearchQuery, schoolScope.selectedSchoolId]);
 
   useEffect(() => {
     setTeacherCurrentPage(1);
-  }, [teacherSearchQuery]);
+  }, [teacherSearchQuery, schoolScope.selectedSchoolId]);
 
   useEffect(() => {
     if (activeTab === 'staff') {
       fetchStaffStructures();
     }
-  }, [activeTab, staffFilterType, staffSearchQuery, staffCurrentPage]);
+  }, [activeTab, staffFilterType, staffSearchQuery, staffCurrentPage, schoolScope.selectedSchoolId]);
 
   useEffect(() => {
     if (activeTab === 'teacher') {
       fetchTeacherStructures();
     }
-  }, [activeTab, teacherSearchQuery, teacherCurrentPage]);
+  }, [activeTab, teacherSearchQuery, teacherCurrentPage, schoolScope.selectedSchoolId]);
 
   useEffect(() => {
     fetchSalaryCardStats(paymentFilters.month, paymentFilters.year);
@@ -1920,11 +1940,11 @@ export default function SalaryManagementPage() {
     } else if (activeTab === 'summary') {
       fetchSalarySummary();
     }
-  }, [activeTab, activePaymentTab]);
+  }, [activeTab, activePaymentTab, schoolScope.selectedSchoolId]);
 
   useEffect(() => {
     fetchSalaryCardStats(paymentFilters.month, paymentFilters.year);
-  }, [paymentFilters.month, paymentFilters.year]);
+  }, [paymentFilters.month, paymentFilters.year, schoolScope.selectedSchoolId]);
 
   useEffect(() => {
     if (activeTab === 'payments') {
@@ -1934,13 +1954,13 @@ export default function SalaryManagementPage() {
         fetchTeacherPayments();
       }
     }
-  }, [paymentFilters.month, paymentFilters.year, paymentFilters.status]);
+  }, [paymentFilters.month, paymentFilters.year, paymentFilters.status, schoolScope.selectedSchoolId]);
 
   useEffect(() => {
     if (showTeacherModal && teachers.length === 0) {
       fetchTeachers();
     }
-  }, [showTeacherModal]);
+  }, [showTeacherModal, schoolScope.selectedSchoolId]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -4000,8 +4020,9 @@ export default function SalaryManagementPage() {
                 </p>
               </div>
             </div>
-            {showRedirectBackButton && (
-              <div className="flex justify-end">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+              <SchoolScopeSelector {...schoolScope} className="w-full sm:w-auto" />
+              {showRedirectBackButton && (
                 <button
                   onClick={handleRedirectBack}
                   className={combine(getSecondaryButtonClass(), "flex items-center space-x-2")}
@@ -4009,8 +4030,8 @@ export default function SalaryManagementPage() {
                   <FaChevronLeft className="text-xs sm:text-sm" />
                   <span>Back</span>
                 </button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
           {/* QUICK STATS */}

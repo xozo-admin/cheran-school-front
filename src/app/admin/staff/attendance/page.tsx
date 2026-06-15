@@ -44,6 +44,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { useThemeClasses } from '@/hooks/useThemeClasses';
 import { toastSuccess, toastError } from '@/lib/toast';
 import { useSearchParams } from 'next/navigation';
+import { SchoolScopeSelector, useSchoolScope } from '@/components/admin/SchoolScopeSelector';
 
 // Interface for daily report
 interface DailyAttendance {
@@ -197,6 +198,7 @@ const ROLE_DISPLAY_NAMES: { [key: string]: string } = {
 export default function StaffAttendancePage() {
   const { theme } = useTheme();
   const { get, combine } = useThemeClasses();
+  const schoolScope = useSchoolScope({ storageKey: 'staff_attendance_school_scope' });
 
   // State for tabs
   const [activeTab, setActiveTab] = useState<TabType>('today');
@@ -499,7 +501,10 @@ export default function StaffAttendancePage() {
   const fetchAllStaff = async () => {
     try {
       const response = await adminApi.attendance.staff.dailyReport(
-        new Date().toISOString().split('T')[0]
+        new Date().toISOString().split('T')[0],
+        undefined,
+        undefined,
+        schoolScope.scopeParams
       );
       const data: DailyReportResponse = response.data;
       setStaffMembers(data.data || []);
@@ -520,6 +525,7 @@ export default function StaffAttendancePage() {
         search: searchTerm.trim() ? searchTerm.trim() : undefined,
         page: currentPage,
         page_size: itemsPerPage,
+        ...schoolScope.scopeParams,
       });
       const data: DailyReportPaginatedResponse = response.data;
       setDailyReport(Array.isArray(data.results) ? data.results : []);
@@ -1518,15 +1524,22 @@ export default function StaffAttendancePage() {
     }
   }, [historyViewMode, historyMonth, historyYear, selectedStaffId, activeTab]);
 
+  useEffect(() => {
+    setCurrentPage(1);
+    setSelectedStaffId('');
+    setSelectedStaff(null);
+    setHistoryData(null);
+  }, [schoolScope.selectedSchoolId]);
+
   // Initialize / refresh today tab data
   useEffect(() => {
     fetchDailyReport();
-  }, [selectedDate, statusFilter, roleFilter, searchTerm, currentPage]);
+  }, [selectedDate, statusFilter, roleFilter, searchTerm, currentPage, schoolScope.selectedSchoolId]);
 
   // Keep history dropdown source unchanged.
   useEffect(() => {
     fetchAllStaff();
-  }, [selectedDate]);
+  }, [selectedDate, schoolScope.selectedSchoolId]);
 
   // Filter and sort daily report
   const filteredStaff = dailyReport;
@@ -1602,6 +1615,7 @@ export default function StaffAttendancePage() {
           search: searchTerm.trim() ? searchTerm.trim() : undefined,
           page,
           page_size: exportPageSize,
+          ...schoolScope.scopeParams,
         });
 
         const data: DailyReportPaginatedResponse = response.data;
@@ -2760,7 +2774,7 @@ export default function StaffAttendancePage() {
       <div className="mx-auto w-full">
         {/* Header Section */}
         <div className="mb-4 sm:mb-6 md:mb-8">
-          <div className="flex items-center justify-between mb-4 sm:mb-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6">
             <div className="flex items-center space-x-2 sm:space-x-3 md:space-x-4">
               <div className={combine(
                 "p-2 sm:p-3 rounded-xl sm:rounded-2xl shadow-lg",
@@ -2779,17 +2793,20 @@ export default function StaffAttendancePage() {
                 </p>
               </div>
             </div>
-            {showRedirectBackButton && (
-              <button
-                onClick={handleRedirectBack}
-                className={combine(
-                  getSecondaryButtonClass(),
-                  'sm:ml-auto flex items-center justify-center'
-                )}
-              >
-                Back
-              </button>
-            )}
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+              <SchoolScopeSelector {...schoolScope} className="w-full sm:w-auto" />
+              {showRedirectBackButton && (
+                <button
+                  onClick={handleRedirectBack}
+                  className={combine(
+                    getSecondaryButtonClass(),
+                    'flex items-center justify-center'
+                  )}
+                >
+                  Back
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Tabs */}

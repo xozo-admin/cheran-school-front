@@ -71,6 +71,7 @@ const PUBLIC_ENDPOINTS = [
   'accounts/login/',
   'accounts/verify-otp/',
   'accounts/register/admin/',
+  'accounts/super-admin-register/',
   'accounts/register/school/',
   'password-reset/request/',
   'password-reset/verify-otp/',
@@ -309,17 +310,18 @@ export const api = {
 
   passwordReset: {
     request: (data: { username: string; method: 'email' | 'sms' }) =>
-      apiClient.post('password-reset/request/', data),
+      apiClient.post('accounts/password-reset/request/', data),
 
     verifyOtp: (data: { username: string; otp: string }) =>
-      apiClient.post('password-reset/verify-otp/', data),
+      apiClient.post('accounts/password-reset/verify-otp/', data),
 
     confirm: (data: { username: string; otp: string; new_password: string; confirm_password: string }) =>
-      apiClient.post('password-reset/confirm/', data),
+      apiClient.post('accounts/password-reset/confirm/', data),
   },
 
   admin: {
     register: (data: any) => apiClient.post('accounts/register/admin/', data),
+    registerSuper: (data: any) => apiClient.post('accounts/super-admin-register/', data),
   },
 
   school: {
@@ -344,23 +346,54 @@ export const api = {
 };
 
 export const adminApi = {
+  adminUsers: {
+    list: () => apiClient.get('setup/admin-users/'),
+    create: (data: {
+      admin_name: string;
+      admin_phone?: string;
+      admin_email: string;
+      admin_password: string;
+      school_id: number;
+      is_active?: boolean;
+    }) => apiClient.post('setup/admin-users/', data),
+  },
   fee: {
     overviewChart: (params?: URLSearchParams) =>
       apiClient.get('/fees/report/overview-chart/', { params }),
   },
   school: {
-    academicYears: () => apiClient.get('school/academic-years/')
+    institutions: {
+      list: () => apiClient.get('school/institutions/'),
+      create: (data: any) => apiClient.post('school/institutions/', data),
+      update: (id: number, data: any) => apiClient.patch(`school/institutions/${id}/`, data),
+      delete: (id: number) => apiClient.delete(`school/institutions/${id}/`),
+    },
+    schools: {
+      list: (params?: { school_id?: number }) => apiClient.get('school/schools/', { params }),
+      create: (data: any) => apiClient.post('school/schools/', data),
+      update: (id: number, data: any) => apiClient.patch(`school/schools/${id}/`, data),
+      delete: (id: number) => apiClient.delete(`school/schools/${id}/`),
+    },
+    academicYears: (params?: { school_id?: number }) => apiClient.get('school/academic-years/', { params }),
+    createAcademicYear: (data: { name: string; start_date: string; end_date: string; is_current: boolean; school_id?: number }) =>
+      apiClient.post('school/academic-years/', data),
+    updateAcademicYear: (
+      id: number,
+      data: { name: string; start_date: string; end_date: string; is_current: boolean; school_id?: number }
+    ) => apiClient.put(`school/academic-years/${id}/`, data),
+    deleteAcademicYear: (id: number, params?: { school_id?: number }) =>
+      apiClient.delete(`school/academic-years/${id}/`, { params }),
   },
   profile: {
     get: () => apiClient.get('setup/profile/'),
   },
 
   dashboard: {
-    get: () => apiClient.get('schooladmin/dashboard/'),
+    get: (params?: { school_id?: number }) => apiClient.get('schooladmin/dashboard/', { params }),
   },
 
   dashboardStats: {
-    get: () => apiClient.get('schooladmin/dashboard-stats/'),
+    get: (params?: { school_id?: number }) => apiClient.get('schooladmin/dashboard-stats/', { params }),
   },
 
   sidebarCounts: {
@@ -376,20 +409,25 @@ export const adminApi = {
     markAsRead: (notificationId: number) => apiClient.put(`notifications/`,
       notificationId ? { notification_id: notificationId } : undefined
     ),
+    whatsappAlertSettings: {
+      list: (params?: { school_id?: number }) => apiClient.get('notifications/whatsapp-alert-settings/', { params }),
+      update: (data: { alert_type: string; enabled: boolean; school_id?: number }) =>
+        apiClient.patch('notifications/whatsapp-alert-settings/', data),
+    },
   },
 
   meetings: {
-    pendingAdminRequests: (params?: { status?: string }) =>
+    pendingAdminRequests: (params?: { status?: string; school_id?: number }) =>
       apiClient.get('meetings/admin-requests/pending/', { params }),
     approveAdminRequest: (
       requestId: number,
-      data?: { final_start?: string; duration_minutes?: number; admin_note?: string }
+      data?: { final_start?: string; duration_minutes?: number; admin_note?: string; school_id?: number }
     ) => apiClient.patch(`meetings/admin-requests/${requestId}/approve/`, data || {}),
-    rejectAdminRequest: (requestId: number, data?: { admin_note?: string }) =>
+    rejectAdminRequest: (requestId: number, data?: { admin_note?: string; school_id?: number }) =>
       apiClient.patch(`meetings/admin-requests/${requestId}/reject/`, data || {}),
     proposeAdminRequestTime: (
       requestId: number,
-      data: { proposed_start: string; duration_minutes?: number; admin_note?: string }
+      data: { proposed_start: string; duration_minutes?: number; admin_note?: string; school_id?: number }
     ) => apiClient.patch(`meetings/admin-requests/${requestId}/propose-time/`, data),
     triggerReminders: () => apiClient.post('meetings/reminders/trigger/', {}),
   },
@@ -402,40 +440,43 @@ export const adminApi = {
     overview: (period: string, className: string) =>
       apiClient.get(`attendance/admin/overview/?period=${period}&class_name=${className}`),
 
-    classReport: (date: string) =>
+    classReport: (date: string, params?: { school_id?: number }) =>
       apiClient.get('attendance/class-report/', {
-        params: { date },
+        params: { date, ...(params || {}) },
       }),
 
-    classDetail: (className: string, date: string) =>
+    classDetail: (className: string, date: string, params?: { school_id?: number }) =>
       apiClient.get('attendance/class-detail', {
-        params: { class: className, date },
+        params: { class: className, date, ...(params || {}) },
       }),
 
     update: (data: { student_id: string; date: string; status: string }) =>
       apiClient.put('attendance/update/', data),
 
     config: {
-      get: () => apiClient.get('attendance/config/'),
+      get: (params?: { school_id?: number }) => apiClient.get('attendance/config/', { params }),
       create: (data: {
         school_latitude: number;
         school_longitude: number;
         allowed_radius_meters: number;
         late_cutoff_time: string;
+        school_id?: number;
       }) => apiClient.post('attendance/config/', data),
       update: (data: {
         school_latitude: number;
         school_longitude: number;
         allowed_radius_meters: number;
         late_cutoff_time: string;
+        school_id?: number;
       }) => apiClient.put('attendance/config/', data),
-      delete: () => apiClient.delete('attendance/config/'),
+      delete: (params?: { school_id?: number }) => apiClient.delete('attendance/config/', { params }),
     },
     qr: {
       startSession: (data: {
         role_scope?: 'teacher' | 'staff' | 'both';
         duration_minutes?: number;
         rotation_seconds?: number;
+        school_id?: number;
       }) => apiClient.post('attendance/qr/session/start/', data),
       getSessionToken: (sessionId: number) =>
         apiClient.get(`attendance/qr/session/${sessionId}/token/`),
@@ -444,11 +485,12 @@ export const adminApi = {
     },
 
     teacher: {
-      dailyReport: (date: string, status?: string) =>
+      dailyReport: (date: string, status?: string, params?: { school_id?: number }) =>
         apiClient.get('attendance/admin/report/teacher/daily/', {
           params: {
             date,
             ...(status ? { status } : {}),
+            ...(params || {}),
           },
         }),
       dailyReportPaginated: (params: {
@@ -457,6 +499,7 @@ export const adminApi = {
         search?: string;
         page?: number;
         page_size?: number;
+        school_id?: number;
       }) =>
         apiClient.get('attendance/admin/report/teacher/daily/paginated/', {
           params,
@@ -482,12 +525,13 @@ export const adminApi = {
     },
 
     staff: {
-      dailyReport: (date: string, status?: string, role?: string) =>
+      dailyReport: (date: string, status?: string, role?: string, params?: { school_id?: number }) =>
         apiClient.get('attendance/admin/report/staff/daily/', {
           params: {
             date,
             ...(status ? { status } : {}),
             ...(role ? { role } : {}),
+            ...(params || {}),
           },
         }),
       dailyReportPaginated: (params: {
@@ -497,6 +541,7 @@ export const adminApi = {
         search?: string;
         page?: number;
         page_size?: number;
+        school_id?: number;
       }) =>
         apiClient.get('attendance/admin/report/staff/daily/paginated/', {
           params,
@@ -524,31 +569,31 @@ export const adminApi = {
   },
 
   academics: {
-    standards: () =>
-      apiClient.get('academics/standards-new/'),
+    standards: (params?: { school_id?: number }) =>
+      apiClient.get('academics/standards-new/', { params }),
 
-    createStandard: (data: { name: string; description?: string }) =>
+    createStandard: (data: { name: string; description?: string; school_id?: number }) =>
       apiClient.post('academics/standards/', data),
 
-    bulkCreateStandards: (standards: string[]) =>
-      apiClient.post('academics/setup/standards/bulk/', { standards }),
+    bulkCreateStandards: (standards: string[], params?: { school_id?: number }) =>
+      apiClient.post('academics/setup/standards/bulk/', { standards }, { params }),
 
-    sections: (standardId: string) =>
+    sections: (standardId: string, params?: { school_id?: number }) =>
       apiClient.get('academics/sections/', {
-        params: { standard_id: standardId },
+        params: { standard_id: standardId, ...(params || {}) },
       }),
 
-    allSections: () => apiClient.get('academics/sections/'),
+    allSections: (params?: { school_id?: number }) => apiClient.get('academics/sections/', { params }),
 
-    createSection: (data: { class_name: string; section_name: string }) =>
+    createSection: (data: { class_name: string; section_name: string; school_id?: number }) =>
       apiClient.post('academics/setup/sections/', data),
 
-    bulkMapSections: (data: Array<{ class_name: string; sections: string[] }>) =>
-      apiClient.post('academics/setup/sections/bulk-map/', data),
+    bulkMapSections: (data: Array<{ class_name: string; sections: string[] }>, params?: { school_id?: number }) =>
+      apiClient.post('academics/setup/sections/bulk-map/', data, { params }),
   },
 
   students: {
-    list: () => apiClient.get('schooladmin/students/'),
+    list: (params?: { school_id?: number }) => apiClient.get('schooladmin/students/', { params }),
     listPaginated: (params?: {
       page?: number;
       page_size?: number;
@@ -558,9 +603,10 @@ export const adminApi = {
       section?: string;
       academic_year?: number | string;
       assignment_status?: 'all' | 'assigned' | 'unassigned';
+      school_id?: number;
     }) =>
       apiClient.get('schooladmin/students/paginated/', { params }),
-    enrollments: (params?: { page?: number; page_size?: number; academic_year?: number | string }) =>
+    enrollments: (params?: { page?: number; page_size?: number; academic_year?: number | string; school_id?: number }) =>
       apiClient.get('student/enrollments/', { params }),
     detail: (studentId: string) => apiClient.get(`schooladmin/students/${studentId}/`),
     overview: (studentId: string) =>
@@ -573,10 +619,11 @@ export const adminApi = {
   },
 
   promotions: {
-    meta: () => apiClient.get('promotions/admin/meta/'),
+    meta: (params?: { school_id?: number }) => apiClient.get('promotions/admin/meta/', { params }),
     preview: (data: {
       from_year_id: number;
       to_year_id: number;
+      school_id?: number;
       section_mode?: 'same_if_exists' | 'none';
       unmapped_action?: 'detain' | 'left' | 'error';
       notes?: string;
@@ -588,10 +635,18 @@ export const adminApi = {
         target_section_id?: number | null;
       }>;
     }) => apiClient.post('promotions/admin/preview/', data),
-    batches: () => apiClient.get('promotions/admin/batches/'),
-    batchDetail: (batchId: number) => apiClient.get(`promotions/admin/batches/${batchId}/`),
-    deleteBatch: (batchId: number) => apiClient.delete(`promotions/admin/batches/${batchId}/delete/`),
-    applyBatch: (batchId: number) => apiClient.post(`promotions/admin/batches/${batchId}/apply/`, {}),
+    batches: (params?: { school_id?: number }) => apiClient.get('promotions/admin/batches/', { params }),
+    batchDetail: (batchId: number, params?: { school_id?: number }) =>
+      apiClient.get(`promotions/admin/batches/${batchId}/`, { params }),
+    updateRecordStatus: (
+      batchId: number,
+      recordId: number,
+      row_status: 'READY' | 'PENDING' | 'LEFT' | 'ERROR'
+    ) => apiClient.patch(`promotions/admin/batches/${batchId}/records/${recordId}/`, { row_status }),
+    deleteBatch: (batchId: number, params?: { school_id?: number }) =>
+      apiClient.delete(`promotions/admin/batches/${batchId}/delete/`, { params }),
+    applyBatch: (batchId: number, params?: { school_id?: number }) =>
+      apiClient.post(`promotions/admin/batches/${batchId}/apply/`, { ...(params || {}) }),
   },
 
   fees: {
@@ -603,22 +658,25 @@ export const adminApi = {
     feePaymentOffline: (data: any) => apiClient.post('fees/payment/offline/', data),
     feeGetConcession: (data: any) => apiClient.get(`fees/concession/?${data}`),
     feePostConcession: (data: any) => apiClient.post('fees/concession/', data),
-    feePutConcession: (data: { concession_id: number; new_amount: string | number }) =>
+    feePutConcession: (data: { concession_id: number; new_amount: string | number; school_id?: number }) =>
       apiClient.put('fees/concession/', data),
-    feeDeleteConcession: (concessionId: number) =>
-      apiClient.delete(`fees/concession/?concession_id=${concessionId}`),
+    feeDeleteConcession: (concessionId: number, params?: { school_id?: number }) =>
+      apiClient.delete('fees/concession/', {
+        params: { concession_id: concessionId, ...params },
+      }),
     feeGetReport: (data: any) => apiClient.get(`fees/report/class/?${data}`),
     feeGetReportDue: (data: any) => apiClient.get(`fees/report/due-school/?${data}`),
     feeDailyReport: (data: any) => apiClient.get(`fees/report/daily/?${data}`),
-    feeStatsCards: (params?: { academic_year?: string }) =>
+    feeStatsCards: (params?: { academic_year?: string; school_id?: number }) =>
       apiClient.get('fees/report/stats-cards/', { params }),
-    feeStudentSummary: (params: { student_id: string; academic_year?: string }) =>
+    feeStudentSummary: (params: { student_id: string; academic_year?: string; school_id?: number }) =>
       apiClient.get('fees/student/summary/', { params }),
     feeTransaction: (data: any) => apiClient.get(`fees/receipt/?transaction_id=${data}`),
+    sendReminders: (data?: { days?: number; school_id?: number }) => apiClient.post('fees/reminders/send/', data || {}),
   },
 
   teachers: {
-    list: () => apiClient.get('schooladmin/teachers/'),
+    list: (params?: { school_id?: number }) => apiClient.get('schooladmin/teachers/', { params }),
     listPaginated: (params?: {
       page?: number;
       page_size?: number;
@@ -627,14 +685,15 @@ export const adminApi = {
       status?: 'all' | 'assigned' | 'unassigned';
       class_name?: string;
       section?: string;
+      school_id?: number;
     }) => apiClient.get('schooladmin/teachers/paginated/', { params }),
 
-    setupList: (simple?: boolean) =>
+    setupList: (simple?: boolean, params?: { school_id?: number }) =>
       apiClient.get('setup/teachers/', {
-        params: simple ? { simple: true } : undefined,
+        params: { ...(simple ? { simple: true } : {}), ...(params || {}) },
       }),
 
-    allAllocations: () => apiClient.get('teacher/all-allocations/'),
+    allAllocations: (params?: { school_id?: number }) => apiClient.get('teacher/all-allocations/', { params }),
 
     detail: (teacherId: string | number) => apiClient.get(`schooladmin/teachers/${teacherId}/`),
 
@@ -650,9 +709,11 @@ export const adminApi = {
       class_name: string;
       section: string;
       academic_year?: string;
+      school_id?: number;
     }) => apiClient.post('schooladmin/assign-teacher/', data),
 
-    allocationsByClass: () => apiClient.get('teacher/teachers-by-class/'),
+    allocationsByClass: (params?: { school_id?: number }) =>
+      apiClient.get('teacher/teachers-by-class/', { params }),
 
     subjectAllocations: (teacherId: string) =>
       apiClient.get('teacher/subject-allocations/', {
@@ -669,6 +730,7 @@ export const adminApi = {
       subject_name: string;
       classes: string[];
       sections?: string[];
+      school_id?: number;
     }) => apiClient.post('teacher/assign-subject/', data),
 
     removeSubject: (data: {
@@ -682,12 +744,13 @@ export const adminApi = {
   },
 
   staff: {
-    list: () => apiClient.get('schooladmin/staff/'),
+    list: (params?: { school_id?: number }) => apiClient.get('schooladmin/staff/', { params }),
     listPaginated: (params?: {
       page?: number;
       page_size?: number;
       search?: string;
       role?: string;
+      school_id?: number;
     }) => apiClient.get('schooladmin/staff/paginated/', { params }),
     detail: (staffId: string) => apiClient.get(`schooladmin/staff/${staffId}/`),
     create: (data: any) => apiClient.post('schooladmin/staff/', data),
@@ -700,7 +763,7 @@ export const adminApi = {
   },
 
   holidays: {
-    list: (params?: { year?: string; month?: string }) =>
+    list: (params?: { year?: string; month?: string; school_id?: number }) =>
       apiClient.get('holidays/admin/manage/', { params }),
     listPaginated: (params?: {
       year?: string;
@@ -709,23 +772,24 @@ export const adminApi = {
       applicable_for?: string;
       page?: number;
       page_size?: number;
+      school_id?: number;
     }) =>
       apiClient.get('holidays/admin/manage/paginated/', { params }),
 
-    create: (data: { name: string; date: string; applicable_for: string }) =>
+    create: (data: { name: string; date: string; applicable_for: string; school_id?: number }) =>
       apiClient.post('holidays/admin/manage/', data),
 
-    update: (data: { holiday_id: number; name: string; date: string; applicable_for: string }) =>
+    update: (data: { holiday_id: number; name: string; date: string; applicable_for: string; school_id?: number }) =>
       apiClient.put('holidays/admin/manage/', data),
 
-    delete: (holidayId: number) =>
+    delete: (holidayId: number, params?: { school_id?: number }) =>
       apiClient.delete('holidays/admin/manage/', {
-        data: { holiday_id: holidayId },
+        data: { holiday_id: holidayId, ...(params || {}) },
       }),
   },
 
   leaves: {
-    adminAction: (params?: { month?: string; year?: string; status?: string }) =>
+    adminAction: (params?: { month?: string; year?: string; status?: string; school_id?: number }) =>
       apiClient.get('leaves/admin/action/', { params }),
     adminActionPaginated: (params?: {
       month?: string;
@@ -736,15 +800,16 @@ export const adminApi = {
       role?: string;
       page?: number;
       page_size?: number;
+      school_id?: number;
     }) =>
       apiClient.get('leaves/admin/action/paginated/', { params }),
 
-    takeAction: (data: { leave_id: number; action: 'Approved' | 'Rejected'; comment: string }) =>
+    takeAction: (data: { leave_id: number; action: 'Approved' | 'Rejected'; comment: string; school_id?: number }) =>
       apiClient.post('leaves/admin/action/', data),
   },
 
   staffWork: {
-    list: (params?: { staff_type?: string; date?: string }) =>
+    list: (params?: { staff_type?: string; date?: string; school_id?: number }) =>
       apiClient.get('staff-work/admin/manage/', { params }),
 
     listPaginated: (params?: {
@@ -754,118 +819,123 @@ export const adminApi = {
       status?: string;
       page?: number;
       page_size?: number;
+      school_id?: number;
     }) =>
       apiClient.get('staff-work/admin/manage/paginated/', { params }),
 
-    updateTask: (data: { task_id: number; new_description: string }) =>
+    updateTask: (data: { task_id: number; new_description: string; school_id?: number }) =>
       apiClient.put('staff-work/admin/manage/', data),
 
-    deleteManage: (data: { task_id?: number; assignment_id?: number }) =>
+    deleteManage: (data: { task_id?: number; assignment_id?: number; school_id?: number }) =>
       apiClient.delete('staff-work/admin/manage/', { data }),
 
-    assignBulk: (data: { staff_type: string; tasks: Array<{ description: string; staff_id: string | string[] }> }) =>
+    assignBulk: (data: { staff_type: string; tasks: Array<{ description: string; staff_id: string | string[] }>; school_id?: number }) =>
       apiClient.post('staff-work/admin/assign-bulk/', data),
 
-    recurringList: () =>
-      apiClient.get('staff-work/admin/recurring-schedule/'),
+    recurringList: (params?: { school_id?: number }) =>
+      apiClient.get('staff-work/admin/recurring-schedule/', { params }),
 
     recurringCreate: (data: any) =>
       apiClient.post('staff-work/admin/recurring-schedule/', data),
 
-    recurringDelete: (scheduleId: number) =>
+    recurringDelete: (scheduleId: number, params?: { school_id?: number }) =>
       apiClient.delete('staff-work/admin/recurring-schedule/', {
-        data: { schedule_id: scheduleId },
+        data: { schedule_id: scheduleId, ...(params || {}) },
       }),
   },
 
   transport: {
     vehicles: {
-      list: () => apiClient.get('transport/admin/vehicles/'),
+      list: (params?: { school_id?: number }) => apiClient.get('transport/admin/vehicles/', { params }),
       create: (data: any) => apiClient.post('transport/admin/vehicles/', data),
-      delete: (busId: number) => apiClient.delete(`transport/admin/vehicles/${busId}/`),
+      delete: (busId: number, params?: { school_id?: number }) =>
+        apiClient.delete(`transport/admin/vehicles/${busId}/`, { params }),
     },
 
     routes: {
-      byBus: (busNumber: string) =>
+      byBus: (busNumber: string, params?: { school_id?: number }) =>
         apiClient.get('transport/admin/routes/', {
-          params: { bus_number: busNumber },
+          params: { bus_number: busNumber, ...(params || {}) },
         }),
       create: (data: any) => apiClient.post('transport/admin/routes/', data),
       update: (data: any) => apiClient.patch('transport/admin/routes/', data),
-      deleteByBus: (busNumber: string) =>
+      deleteByBus: (busNumber: string, params?: { school_id?: number }) =>
         apiClient.delete('transport/admin/routes/', {
-          params: { bus_number: busNumber },
+          params: { bus_number: busNumber, ...(params || {}) },
         }),
     },
 
     stops: {
       update: (data: any) => apiClient.put('transport/admin/stops/', data),
-      delete: (stopId: number) =>
+      delete: (stopId: number, params?: { school_id?: number }) =>
         apiClient.delete('transport/admin/stops/', {
-          data: { stop_id: stopId },
+          data: { stop_id: stopId, ...(params || {}) },
         }),
     },
 
     passengers: {
-      list: (busNumber: string) =>
+      list: (busNumber: string, params?: { school_id?: number }) =>
         apiClient.get('transport/admin/passengers-list/', {
-          params: { bus_number: busNumber },
+          params: { bus_number: busNumber, ...(params || {}) },
         }),
     },
 
     allocation: {
-      byBus: (busNumber: string) =>
+      byBus: (busNumber: string, params?: { school_id?: number }) =>
         apiClient.get('transport/admin/allocation/', {
-          params: { bus_number: busNumber },
+          params: { bus_number: busNumber, ...(params || {}) },
         }),
       create: (data: any) => apiClient.post('transport/admin/allocation/', data),
       delete: (data: any) => apiClient.delete('transport/admin/allocation/', { data }),
     },
 
     drivers: {
-      byBus: (busNumber: string) =>
+      byBus: (busNumber: string, params?: { school_id?: number }) =>
         apiClient.get('transport/admin/assign-driver/', {
-          params: { bus_number: busNumber },
+          params: { bus_number: busNumber, ...(params || {}) },
         }),
       assign: (data: any) => apiClient.post('transport/admin/assign-driver/', data),
-      unassign: (busNumber: string) =>
+      unassign: (busNumber: string, params?: { school_id?: number }) =>
         apiClient.delete('transport/admin/assign-driver/', {
-          params: { bus_number: busNumber },
+          params: { bus_number: busNumber, ...(params || {}) },
         }),
     },
 
     expenses: {
-      list: (params?: { date?: string; month?: string; year?: string }) =>
+      list: (params?: { date?: string; month?: string; year?: string; school_id?: number }) =>
         apiClient.get('transport/admin/expenses/', { params }),
     },
 
     active: {
-      buses: () => apiClient.get('schooladmin/active-buses/'),
+      buses: (params?: { school_id?: number }) => apiClient.get('schooladmin/active-buses/', { params }),
     },
   },
 
   hostel: {
-    dashboard: () => apiClient.get('hostel/admin/dashboard/'),
+    dashboard: (params?: { school_id?: number }) => apiClient.get('hostel/admin/dashboard/', { params }),
 
     blocks: {
-      list: () => apiClient.get('hostel/admin/blocks/'),
+      list: (params?: { school_id?: number }) => apiClient.get('hostel/admin/blocks/', { params }),
       create: (data: {
         name: string;
         description?: string;
         gender_policy?: 'boys' | 'girls' | 'coed';
         is_active?: boolean;
+        school_id?: number;
       }) => apiClient.post('hostel/admin/blocks/', data),
       update: (id: number, data: Partial<{
         name: string;
         description: string;
         gender_policy: 'boys' | 'girls' | 'coed';
         is_active: boolean;
+        school_id: number;
       }>) => apiClient.put(`hostel/admin/blocks/${id}/`, data),
-      delete: (id: number) => apiClient.delete(`hostel/admin/blocks/${id}/`),
+      delete: (id: number, params?: { school_id?: number }) =>
+        apiClient.delete(`hostel/admin/blocks/${id}/`, { params }),
     },
 
     rooms: {
-      list: (params?: { block_id?: number | string }) =>
+      list: (params?: { block_id?: number | string; school_id?: number }) =>
         apiClient.get('hostel/admin/rooms/', { params }),
       create: (data: {
         block: number | string;
@@ -875,6 +945,7 @@ export const adminApi = {
         capacity?: number;
         monthly_fee?: number | string;
         is_active?: boolean;
+        school_id?: number;
       }) => apiClient.post('hostel/admin/rooms/', data),
       update: (id: number, data: Partial<{
         block: number | string;
@@ -884,8 +955,10 @@ export const adminApi = {
         capacity: number;
         monthly_fee: number | string;
         is_active: boolean;
+        school_id: number;
       }>) => apiClient.put(`hostel/admin/rooms/${id}/`, data),
-      delete: (id: number) => apiClient.delete(`hostel/admin/rooms/${id}/`),
+      delete: (id: number, params?: { school_id?: number }) =>
+        apiClient.delete(`hostel/admin/rooms/${id}/`, { params }),
     },
 
     beds: {
@@ -893,28 +966,33 @@ export const adminApi = {
         room_id?: number | string;
         block_id?: number | string;
         available_only?: boolean;
+        school_id?: number;
       }) => apiClient.get('hostel/admin/beds/', { params }),
       create: (data: {
         room: number | string;
         bed_number: string;
         is_active?: boolean;
+        school_id?: number;
       }) => apiClient.post('hostel/admin/beds/', data),
       update: (id: number, data: Partial<{
         room: number | string;
         bed_number: string;
         is_active: boolean;
+        school_id: number;
       }>) => apiClient.put(`hostel/admin/beds/${id}/`, data),
-      delete: (id: number) => apiClient.delete(`hostel/admin/beds/${id}/`),
+      delete: (id: number, params?: { school_id?: number }) =>
+        apiClient.delete(`hostel/admin/beds/${id}/`, { params }),
     },
 
     wardenAssignments: {
-      list: (params?: { block_id?: number | string }) =>
+      list: (params?: { block_id?: number | string; school_id?: number }) =>
         apiClient.get('hostel/admin/warden-assignments/', { params }),
       create: (data: {
         block: number | string;
         staff: number | string;
         is_primary?: boolean;
         is_active?: boolean;
+        school_id?: number;
       }) => apiClient.post('hostel/admin/warden-assignments/', data),
       update: (data: {
         assignment_id: number;
@@ -922,6 +1000,7 @@ export const adminApi = {
         staff?: number | string;
         is_primary?: boolean;
         is_active?: boolean;
+        school_id?: number;
       }) => apiClient.put('hostel/admin/warden-assignments/', data),
       delete: (assignmentId: number) =>
         apiClient.delete('hostel/admin/warden-assignments/', {
@@ -935,6 +1014,7 @@ export const adminApi = {
         block_id?: number | string;
         room_id?: number | string;
         student_id?: string;
+        school_id?: number;
       }) => apiClient.get('hostel/admin/allocations/', { params }),
       create: (data: {
         student: number | string;
@@ -947,6 +1027,7 @@ export const adminApi = {
         emergency_contact_phone?: string;
         notes?: string;
         is_active?: boolean;
+        school_id?: number;
       }) => apiClient.post('hostel/admin/allocations/', data),
       update: (data: {
         allocation_id: number;
@@ -960,26 +1041,28 @@ export const adminApi = {
         emergency_contact_phone?: string;
         notes?: string;
         is_active?: boolean;
+        school_id?: number;
       }) => apiClient.put('hostel/admin/allocations/', data),
-      delete: (allocationId: number) =>
+      delete: (allocationId: number, data?: { school_id?: number }) =>
         apiClient.delete('hostel/admin/allocations/', {
-          data: { allocation_id: allocationId },
+          data: { allocation_id: allocationId, ...data },
         }),
     },
 
     attendance: {
-      list: (params?: { date?: string; block_id?: number | string }) =>
+      list: (params?: { date?: string; block_id?: number | string; school_id?: number }) =>
         apiClient.get('hostel/admin/attendance/', { params }),
       upsert: (data: {
         allocation: number | string;
         date: string;
         status: 'present' | 'out_pass' | 'leave' | 'absent';
         remarks?: string;
+        school_id?: number;
       }) => apiClient.post('hostel/admin/attendance/', data),
     },
 
     incidents: {
-      list: (params?: { resolved?: 'true' | 'false'; block_id?: number | string }) =>
+      list: (params?: { resolved?: 'true' | 'false'; block_id?: number | string; school_id?: number }) =>
         apiClient.get('hostel/admin/incidents/', { params }),
       create: (data: {
         allocation: number | string;
@@ -989,6 +1072,7 @@ export const adminApi = {
         occurred_at: string;
         resolved?: boolean;
         resolution_note?: string;
+        school_id?: number;
       }) => apiClient.post('hostel/admin/incidents/', data),
       update: (data: {
         incident_id: number;
@@ -998,6 +1082,7 @@ export const adminApi = {
         occurred_at?: string;
         resolved?: boolean;
         resolution_note?: string;
+        school_id?: number;
       }) => apiClient.put('hostel/admin/incidents/', data),
     },
     inOut: {
@@ -1007,20 +1092,22 @@ export const adminApi = {
         allocation_id?: number | string;
         date_from?: string;
         date_to?: string;
+        school_id?: number;
       }) => apiClient.get('hostel/admin/in-out/', { params }),
       create: (data: {
         allocation: number | string;
         movement_type: 'in' | 'out';
         moved_at: string;
         reason?: string;
+        school_id?: number;
       }) => apiClient.post('hostel/admin/in-out/', data),
     },
   },
 
   inventory: {
-    list: (staffType?: string) =>
+    list: (staffType?: string, params?: { school_id?: number }) =>
       apiClient.get('inventory/admin/manage/', {
-        params: staffType ? { staff_type: staffType } : undefined,
+        params: { ...(staffType ? { staff_type: staffType } : {}), ...(params || {}) },
       }),
 
     listPaginated: (params?: {
@@ -1028,31 +1115,32 @@ export const adminApi = {
       search?: string;
       page?: number;
       page_size?: number;
+      school_id?: number;
     }) =>
       apiClient.get('inventory/admin/manage/paginated/', { params }),
 
-    createBulk: (data: { staff_type: string; items: Array<{ stock_name: string; quantity: number }> }) =>
+    createBulk: (data: { staff_type: string; items: Array<{ stock_name: string; quantity: number }>; school_id?: number }) =>
       apiClient.post('inventory/admin/manage/', data),
 
-    update: (data: { item_id: number; stock_name: string; add_stock?: number }) =>
+    update: (data: { item_id: number; stock_name: string; add_stock?: number; school_id?: number }) =>
       apiClient.put('inventory/admin/manage/', data),
 
-    delete: (itemId: number) =>
+    delete: (itemId: number, params?: { school_id?: number }) =>
       apiClient.delete('inventory/admin/manage/', {
-        data: { item_id: itemId },
+        data: { item_id: itemId, ...(params || {}) },
       }),
   },
 
   salary: {
     staff: {
       // Dashboard endpoints
-      allDashboard: (params: { year: number; month: number }) =>
+      allDashboard: (params: { year: number; month: number; school_id?: number }) =>
         apiClient.get('salary/dashboard/staff/all/', { params }),
 
-      dashboard: (params: { year: number; month: number; role: any }) =>
+      dashboard: (params: { year: number; month: number; role: any; school_id?: number }) =>
         apiClient.get('salary/dashboard/staff/', { params }),
 
-      dashboardStaff: (params: { year: number; month: number; staff_id: any }) =>
+      dashboardStaff: (params: { year: number; month: number; staff_id: any; school_id?: number }) =>
         apiClient.get('salary/dashboard/staff/', { params }),
 
       // Structure management endpoints
@@ -1061,6 +1149,7 @@ export const adminApi = {
         q?: string;
         page?: number;
         page_size?: number;
+        school_id?: number;
       }) =>
         apiClient.get('salary/admin/structure/staff/', {
           params,
@@ -1070,20 +1159,21 @@ export const adminApi = {
         staff_type: string;
         base_salary: number;
         late_penalty_percentage: number;
+        school_id?: number;
       }) => apiClient.post('salary/admin/structure/staff/', data),
 
-      deleteStructure: (staffType: string) =>
+      deleteStructure: (staffType: string, params?: { school_id?: number }) =>
         apiClient.delete('salary/admin/structure/staff/', {
-          params: { staff_type: staffType },
+          params: { staff_type: staffType, ...(params || {}) },
         }),
     },
 
     teacher: {
       // Dashboard endpoints
-      allDashboard: (params: { year: number; month: number }) =>
+      allDashboard: (params: { year: number; month: number; school_id?: number }) =>
         apiClient.get('salary/dashboard/teacher/all/', { params }),
 
-      dashboard: (params: { year: number; month: number; teacher_id: any }) =>
+      dashboard: (params: { year: number; month: number; teacher_id: any; school_id?: number }) =>
         apiClient.get('salary/dashboard/teacher/', { params }),
 
       // Structure management endpoints
@@ -1092,6 +1182,7 @@ export const adminApi = {
         q?: string;
         page?: number;
         page_size?: number;
+        school_id?: number;
       }) =>
         apiClient.get('salary/admin/structure/teacher/', {
           params,
@@ -1101,11 +1192,12 @@ export const adminApi = {
         teacher_id: string;
         base_salary: number;
         late_penalty_percentage: number;
+        school_id?: number;
       }) => apiClient.post('salary/admin/structure/teacher/', data),
 
-      deleteStructure: (teacherId: string) =>
+      deleteStructure: (teacherId: string, params?: { school_id?: number }) =>
         apiClient.delete('salary/admin/structure/teacher/', {
-          params: { teacher_id: teacherId },
+          params: { teacher_id: teacherId, ...(params || {}) },
         }),
     },
 
@@ -1118,6 +1210,7 @@ export const adminApi = {
           month?: number;
           year?: number;
           status?: 'pending' | 'processed' | 'failed' | 'cancelled';
+          school_id?: number;
         }) => apiClient.get('salary/admin/payments/staff/', { params }),
 
         // Get specific payment details
@@ -1129,6 +1222,7 @@ export const adminApi = {
           staff_id: number;
           month: number;
           year: number;
+          school_id?: number;
         }) => apiClient.post('salary/admin/payments/staff/process/', data),
 
         // Bulk process salaries for multiple staff members
@@ -1136,6 +1230,7 @@ export const adminApi = {
           month: number;
           year: number;
           staff_type?: string;
+          school_id?: number;
         }) => apiClient.post('salary/admin/payments/staff/bulk-process/', data),
 
         // Update a payment record
@@ -1144,6 +1239,7 @@ export const adminApi = {
           bank_reference?: string;
           payment_status?: 'pending' | 'processed' | 'failed' | 'cancelled';
           remarks?: string;
+          school_id?: number;
         }) => apiClient.put(`salary/admin/payments/staff/${paymentId}/`, data),
 
         // Delete a payment record
@@ -1172,6 +1268,7 @@ export const adminApi = {
           month?: number;
           year?: number;
           status?: 'pending' | 'processed' | 'failed' | 'cancelled';
+          school_id?: number;
         }) => apiClient.get('salary/admin/payments/teacher/', { params }),
 
         // Get specific payment details
@@ -1183,12 +1280,14 @@ export const adminApi = {
           teacher_id: number;
           month: number;
           year: number;
+          school_id?: number;
         }) => apiClient.post('salary/admin/payments/teacher/process/', data),
 
         // Bulk process salaries for all teachers
         bulkProcess: (data: {
           month: number;
           year: number;
+          school_id?: number;
         }) => apiClient.post('salary/admin/payments/teacher/bulk-process/', data),
 
         // Update a payment record
@@ -1197,6 +1296,7 @@ export const adminApi = {
           bank_reference?: string;
           payment_status?: 'pending' | 'processed' | 'failed' | 'cancelled';
           remarks?: string;
+          school_id?: number;
         }) => apiClient.put(`salary/admin/payments/teacher/${paymentId}/`, data),
 
         // Delete a payment record
@@ -1232,11 +1332,13 @@ export const adminApi = {
       summary: (params?: {
         month?: number;
         year?: number;
+        school_id?: number;
       }) => apiClient.get('salary/admin/payments/summary/', { params }),
 
       cardsOverview: (params?: {
         month?: number;
         year?: number;
+        school_id?: number;
       }) => apiClient.get('salary/admin/cards/overview/', { params }),
     },
 
@@ -1245,6 +1347,7 @@ export const adminApi = {
         employee_type: 'staff' | 'teacher';
         employee_id: string;
         year: number;
+        school_id?: number;
       }) => apiClient.get('salary/admin/payments/employee-yearly-report/', { params }),
     },
 
@@ -1257,6 +1360,7 @@ export const adminApi = {
         year?: number;
         status?: 'pending' | 'processing' | 'processed' | 'failed' | 'cancelled' | '';
         q?: string;
+        school_id?: number;
       }) => apiClient.get('salary/admin/audit/logs/', { params }),
     },
   },
@@ -1362,11 +1466,11 @@ export const adminApi = {
   },
 
   announcements: {
-    dashboardOverview: () =>
-      apiClient.get('announcements/admin/dashboard/overview/'),
+    dashboardOverview: (params?: { school_id?: number }) =>
+      apiClient.get('announcements/admin/dashboard/overview/', { params }),
 
-    commonList: () =>
-      apiClient.get('announcements/admin/common-announcements/'),
+    commonList: (params?: { school_id?: number }) =>
+      apiClient.get('announcements/admin/common-announcements/', { params }),
     commonListPaginated: (params?: {
       q?: string;
       date?: string;
@@ -1375,13 +1479,14 @@ export const adminApi = {
       sort_dir?: 'asc' | 'desc';
       page?: number;
       page_size?: number;
+      school_id?: number;
     }) =>
       apiClient.get('announcements/admin/common-announcements/paginated/', { params }),
 
-    commonCreate: (data: { title: string; description: string; date: string }) =>
+    commonCreate: (data: { title: string; description: string; date: string; school_id?: number }) =>
       apiClient.post('announcements/admin/common-announcements/', data),
 
-    staffList: (params?: { date?: string; role?: string }) =>
+    staffList: (params?: { date?: string; role?: string; school_id?: number }) =>
       apiClient.get('announcements/admin/staff-announcements/', { params }),
     staffListPaginated: (params?: {
       q?: string;
@@ -1393,6 +1498,7 @@ export const adminApi = {
       sort_dir?: 'asc' | 'desc';
       page?: number;
       page_size?: number;
+      school_id?: number;
     }) =>
       apiClient.get('announcements/admin/staff-announcements/paginated/', { params }),
     teacherListPaginated: (params?: {
@@ -1404,6 +1510,7 @@ export const adminApi = {
       sort_dir?: 'asc' | 'desc';
       page?: number;
       page_size?: number;
+      school_id?: number;
     }) =>
       apiClient.get('announcements/admin/teacher-announcements/paginated/', { params }),
 
@@ -1413,18 +1520,19 @@ export const adminApi = {
       date: string;
       visibility: 'ALL_STAFF' | 'ROLE_SPECIFIC';
       target_role: string;
+      school_id?: number;
     }) => apiClient.post('announcements/admin/staff-announcements/', data),
 
-    staffUpdate: (id: number, data: { title: string; description: string }) =>
+    staffUpdate: (id: number, data: { title: string; description: string; school_id?: number }) =>
       apiClient.put(`announcements/admin/staff-announcements/${id}/`, data),
 
-    staffDelete: (id: number) =>
-      apiClient.delete(`announcements/admin/staff-announcements/${id}/`),
+    staffDelete: (id: number, params?: { school_id?: number }) =>
+      apiClient.delete(`announcements/admin/staff-announcements/${id}/`, { params }),
   },
 
   exams: {
-    terms: () =>
-      apiClient.get('exams/admin/terms/'),
+    terms: (params?: { school_id?: number }) =>
+      apiClient.get('exams/admin/terms/', { params }),
 
     createTerm: (data: any) =>
       apiClient.post('exams/admin/terms/', data),
@@ -1432,19 +1540,25 @@ export const adminApi = {
     updateTerm: (data: any) =>
       apiClient.put('exams/admin/terms/', data),
 
-    deleteTerm: (termId: number) =>
-      apiClient.delete('exams/admin/terms/', { params: { id: termId } }),
+    deleteTerm: (termId: number, params?: { school_id?: number }) =>
+      apiClient.delete('exams/admin/terms/', { params: { id: termId, ...(params || {}) } }),
 
     list: (termId?: number) =>
       apiClient.get('exams/list/', {
         params: termId ? { term_id: termId } : undefined,
       }),
 
-    schedule: (params?: string) =>
-      apiClient.get('exams/admin/schedule/' + (params ? `?${params}` : '')),
+    schedule: (params?: string | URLSearchParams | Record<string, string | number | undefined>) => {
+      if (!params) return apiClient.get('exams/admin/schedule/');
+      if (typeof params === 'string') return apiClient.get('exams/admin/schedule/' + (params ? `?${params}` : ''));
+      return apiClient.get('exams/admin/schedule/', { params });
+    },
 
-    termSchedules: (params?: string) =>
-      apiClient.get('exams/admin/term-schedules/' + (params ? `?${params}` : '')),
+    termSchedules: (params?: string | URLSearchParams | Record<string, string | number | undefined>) => {
+      if (!params) return apiClient.get('exams/admin/term-schedules/');
+      if (typeof params === 'string') return apiClient.get('exams/admin/term-schedules/' + (params ? `?${params}` : ''));
+      return apiClient.get('exams/admin/term-schedules/', { params });
+    },
 
     createSchedule: (data: any) =>
       apiClient.post('exams/admin/schedule/', data),
@@ -1452,8 +1566,8 @@ export const adminApi = {
     updateSchedule: (data: any) =>
       apiClient.put('exams/admin/schedule/', data),
 
-    deleteSchedule: (scheduleId: number) =>
-      apiClient.delete('exams/admin/schedule/', { params: { schedule_id: scheduleId } }),
+    deleteSchedule: (scheduleId: number, params?: { school_id?: number }) =>
+      apiClient.delete('exams/admin/schedule/', { params: { schedule_id: scheduleId, ...(params || {}) } }),
 
     classResult: (params: URLSearchParams) =>
       apiClient.get(`exams/class-result/?${params.toString()}`),
@@ -1467,37 +1581,40 @@ export const adminApi = {
     studentMarksDetail: (params: URLSearchParams) =>
       apiClient.get(`exams/student-marks-detail/?${params.toString()}`),
 
-    approvals: () =>
-      apiClient.get('exams/admin/approvals/'),
+    approvals: (params?: { school_id?: number }) =>
+      apiClient.get('exams/admin/approvals/', { params }),
 
     handleApproval: (data: { request_id: number; action: 'APPROVE' | 'REJECT' }) =>
       apiClient.post('exams/admin/approvals/', data),
 
-    overview: () =>
-      apiClient.get('exams/admin/overview/'),
+    overview: (params?: { school_id?: number }) =>
+      apiClient.get('exams/admin/overview/', { params }),
   },
 
   subjects: {
-    viewByClass: (className: string) =>
+    viewByClass: (className: string, params?: { school_id?: number }) =>
       apiClient.get('subjects/view/', {
-        params: { class: className },
+        params: { class: className, ...(params || {}) },
       }),
 
-    assignBulk: (data: { class_name: string; subjects: string[] }) =>
+    assignBulk: (data: { class_name: string; subjects: string[]; school_id?: number }) =>
       apiClient.post('subjects/assign/bulk/', data),
 
 
-    viewAll: () => apiClient.get('subjects/view/all/'),
+    viewAll: (params?: { school_id?: number }) => apiClient.get('subjects/view/all/', { params }),
   },
 
   timetable: {
-    get: (params: { class: string; section: string; day?: string }) => {
+    get: (params: { class: string; section: string; day?: string; school_id?: number }) => {
       // Create URLSearchParams properly
       const queryParams = new URLSearchParams();
       queryParams.append('class', params.class);
       queryParams.append('section', params.section);
       if (params.day) {
         queryParams.append('day', params.day);
+      }
+      if (params.school_id) {
+        queryParams.append('school_id', String(params.school_id));
       }
       return apiClient.get(`timetable/manage/?${queryParams.toString()}`);
     },
@@ -1521,22 +1638,23 @@ export const adminApi = {
       subject_periods?: Record<string, number>;
       section_subject_teachers?: Record<string, Record<string, string>>;
       overwrite_existing?: boolean;
+      school_id?: number;
     }) =>
       apiClient.post('timetable/auto-generate/', data),
 
-    substitutionFreeTeachers: (params: { date: string; period: string | number; class_name?: string; section?: string }) =>
+    substitutionFreeTeachers: (params: { date: string; period: string | number; class_name?: string; section?: string; school_id?: number }) =>
       apiClient.get('timetable/substitution/free-teachers/', { params }),
 
     substitutionAssign: (
-      params: { date: string; class_name?: string; section?: string },
+      params: { date: string; class_name?: string; section?: string; school_id?: number },
       data: { period_no: number; subject: string; teacher_id: string }
     ) =>
       apiClient.post('timetable/substitution/assign/', data, { params }),
 
-    substitutionRecent: (params?: { limit?: number }) =>
+    substitutionRecent: (params?: { limit?: number; school_id?: number }) =>
       apiClient.get('timetable/substitution/recent/', { params }),
 
-    delete: (params: { class: string; section: string; day?: string; period?: number }) => {
+    delete: (params: { class: string; section: string; day?: string; period?: number; school_id?: number }) => {
       // Create URLSearchParams properly
       const queryParams = new URLSearchParams();
       queryParams.append('class', params.class);
@@ -1547,12 +1665,18 @@ export const adminApi = {
       if (params.period) {
         queryParams.append('period', params.period.toString());
       }
+      if (params.school_id) {
+        queryParams.append('school_id', String(params.school_id));
+      }
       return apiClient.delete(`timetable/manage/?${queryParams.toString()}`);
     },
 
-    getBreaks: (className: string) => {
+    getBreaks: (className: string, params?: { school_id?: number }) => {
       const queryParams = new URLSearchParams();
       queryParams.append('class', className);
+      if (params?.school_id) {
+        queryParams.append('school_id', String(params.school_id));
+      }
       return apiClient.get(`timetable/break/?${queryParams.toString()}`);
     },
 
@@ -1562,9 +1686,12 @@ export const adminApi = {
     updateBreak: (data: any) =>
       apiClient.put('timetable/break/', data),
 
-    deleteBreak: (id: number) => {
+    deleteBreak: (id: number, params?: { school_id?: number }) => {
       const queryParams = new URLSearchParams();
       queryParams.append('id', id.toString());
+      if (params?.school_id) {
+        queryParams.append('school_id', String(params.school_id));
+      }
       return apiClient.delete(`timetable/break/?${queryParams.toString()}`);
     },
   },

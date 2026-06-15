@@ -76,6 +76,7 @@ import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import { format, parseISO, isAfter, isBefore, differenceInDays } from 'date-fns';
 import { usePathname, useSearchParams } from 'next/navigation';
+import { SchoolScopeSelector, useSchoolScope } from '@/components/admin/SchoolScopeSelector';
 
 // ============ INTERFACES ============
 
@@ -349,6 +350,7 @@ export default function FeesManagementPage() {
   const redirectParamsHandled = useRef(false);
   const { theme } = useTheme();
   const { get, combine } = useThemeClasses();
+  const schoolScope = useSchoolScope({ storageKey: 'fee_management_school_scope' });
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const isFeeReportsRoute = pathname === '/admin/finance/feereports';
@@ -448,6 +450,7 @@ export default function FeesManagementPage() {
     due_date: format(new Date().setMonth(new Date().getMonth() + 1), 'yyyy-MM-dd'),
     override_existing: false
   });
+  const [assignFeeTypeMode, setAssignFeeTypeMode] = useState<'existing' | 'new'>('existing');
 
   const [updateFeeData, setUpdateFeeData] = useState({
     fee_id: '',
@@ -757,7 +760,7 @@ export default function FeesManagementPage() {
   // Fetch academic years
   const fetchAcademicYears = useCallback(async () => {
     try {
-      const res = await adminApi.school.academicYears();
+      const res = await adminApi.school.academicYears(schoolScope.scopeParams);
 
       if (res.data) {
         const data = res.data;
@@ -788,12 +791,12 @@ export default function FeesManagementPage() {
       console.error('Error fetching academic years:', error);
       toastError('Failed to fetch academic years');
     }
-  }, [applyStaffClassFallbackFromStructures]);
+  }, [applyStaffClassFallbackFromStructures, schoolScope.selectedSchoolId]);
 
   // Fetch standards and sections
   const fetchStandardsAndSections = useCallback(async () => {
     try {
-      const res = await adminApi.academics.standards();
+      const res = await adminApi.academics.standards(schoolScope.scopeParams);
 
       if (res.data) {
         const data = res.data;
@@ -821,7 +824,7 @@ export default function FeesManagementPage() {
       console.error('Error fetching standards:', error);
       toastError('Failed to fetch classes and sections');
     }
-  }, [applyStaffClassFallbackFromStructures]);
+  }, [applyStaffClassFallbackFromStructures, schoolScope.selectedSchoolId]);
 
   // Fetch fee structures
   const fetchFeeStructures = useCallback(async () => {
@@ -832,6 +835,7 @@ export default function FeesManagementPage() {
       if (filterClass !== 'all') queryParams.append('class', filterClass);
       if (filterType !== 'all') queryParams.append('fee_type', filterType);
       if (structureSearchQuery.trim()) queryParams.append('q', structureSearchQuery.trim());
+      if (schoolScope.scopeParams.school_id) queryParams.append('school_id', String(schoolScope.scopeParams.school_id));
       queryParams.append('page', String(currentPage));
       queryParams.append('page_size', String(itemsPerPage));
 
@@ -880,7 +884,7 @@ export default function FeesManagementPage() {
     } finally {
       setLoading(false);
     }
-  }, [filterYear, filterClass, filterType, structureSearchQuery, currentPage, itemsPerPage]);
+  }, [filterYear, filterClass, filterType, structureSearchQuery, currentPage, itemsPerPage, schoolScope.selectedSchoolId]);
 
   // Fetch fee types
   const fetchFeeTypes = useCallback(async () => {
@@ -898,15 +902,30 @@ export default function FeesManagementPage() {
 
   // Assign fee to class
   const assignFeeToClass = async () => {
+    const normalizedFeeType = assignFeeData.fee_type.trim();
+    if (!normalizedFeeType) {
+      toastInfo('Fee type is required.');
+      return;
+    }
+    if (!/^[a-zA-Z0-9\s-]+$/.test(normalizedFeeType)) {
+      toastError('Fee type can only contain letters, numbers, spaces, and hyphens.');
+      return;
+    }
+
     setActionLoading(true);
     try {
-      const res = await adminApi.fees.feeAssign(assignFeeData);
+      const res = await adminApi.fees.feeAssign({
+        ...assignFeeData,
+        fee_type: normalizedFeeType,
+        ...schoolScope.scopeParams,
+      });
 
       const data = extractApiPayload(res.data) || {};
 
       if (res.data) {
         toastSuccess(`Fee assigned successfully to ${data.students_created || 0} students`);
         setShowAssignModal(false);
+        setAssignFeeTypeMode('existing');
         setAssignFeeData({
           academic_year: currentAcademicYear,
           class_name: '',
@@ -916,6 +935,7 @@ export default function FeesManagementPage() {
           due_date: format(new Date().setMonth(new Date().getMonth() + 1), 'yyyy-MM-dd'),
           override_existing: false
         });
+        fetchFeeTypes();
         fetchFeeStructures();
         setActiveTab('structure');
       } else {
@@ -934,7 +954,10 @@ export default function FeesManagementPage() {
   const updateFeeStructure = async () => {
     setActionLoading(true);
     try {
-      const res = await adminApi.fees.feeUpdate(updateFeeData);
+      const res = await adminApi.fees.feeUpdate({
+        ...updateFeeData,
+        ...schoolScope.scopeParams,
+      });
 
       const data = extractApiPayload(res.data) || {};
 
@@ -967,7 +990,7 @@ export default function FeesManagementPage() {
   const deleteFeeStructure = async (feeId: number) => {
     setActionLoading(true);
     try {
-      const res = await adminApi.fees.feeDelete({ fee_id: feeId });
+      const res = await adminApi.fees.feeDelete({ fee_id: feeId, ...schoolScope.scopeParams });
 
       const data = extractApiPayload(res.data) || {};
 
@@ -992,7 +1015,10 @@ export default function FeesManagementPage() {
     setActionLoading(true);
     try {
       console.log(paymentData)
-      const res = await adminApi.fees.feePaymentOffline(paymentData);
+      const res = await adminApi.fees.feePaymentOffline({
+        ...paymentData,
+        ...schoolScope.scopeParams,
+      });
 
       const data = await res.data;
 
@@ -1031,6 +1057,7 @@ export default function FeesManagementPage() {
       if (concessionFilters.student_id) {
         queryParams.append('student_id', concessionFilters.student_id);
       }
+      if (schoolScope.scopeParams.school_id) queryParams.append('school_id', String(schoolScope.scopeParams.school_id));
 
       const res = await adminApi.fees.feeGetConcession(queryParams);
 
@@ -1044,7 +1071,7 @@ export default function FeesManagementPage() {
     } finally {
       setLoading(false);
     }
-  }, [concessionFilters.student_id, currentAcademicYear]);
+  }, [concessionFilters.student_id, currentAcademicYear, schoolScope.selectedSchoolId]);
 
   // Apply concession
   const applyConcession = async () => {
@@ -1052,7 +1079,8 @@ export default function FeesManagementPage() {
     try {
       const payload = {
         ...concessionData,
-        academic_year: concessionData.academic_year || currentAcademicYear
+        academic_year: concessionData.academic_year || currentAcademicYear,
+        ...schoolScope.scopeParams,
       };
 
       const res = await adminApi.fees.feePostConcession(payload);
@@ -1092,6 +1120,7 @@ export default function FeesManagementPage() {
             const updateRes = await adminApi.fees.feePutConcession({
               concession_id: Number(firstFailed.concession_id),
               new_amount: updateAmount,
+              ...schoolScope.scopeParams,
             });
             const updateData = extractApiPayload(updateRes.data) || {};
             toastSuccess(updateData.message || 'Concession updated successfully');
@@ -1133,6 +1162,7 @@ export default function FeesManagementPage() {
       const res = await adminApi.fees.feePutConcession({
         concession_id: concession.id,
         new_amount: nextAmount,
+        ...schoolScope.scopeParams,
       });
       const data = extractApiPayload(res.data) || {};
       toastSuccess(data.message || 'Concession updated successfully');
@@ -1156,7 +1186,7 @@ export default function FeesManagementPage() {
 
     setActionLoading(true);
     try {
-      const res = await adminApi.fees.feeDeleteConcession(concession.id);
+      const res = await adminApi.fees.feeDeleteConcession(concession.id, schoolScope.scopeParams);
       const data = extractApiPayload(res.data) || {};
       toastSuccess(data.message || 'Concession removed successfully');
       await fetchConcessions();
@@ -1182,6 +1212,7 @@ export default function FeesManagementPage() {
       if (reportFilters.class) queryParams.append('class', reportFilters.class);
       if (reportFilters.section) queryParams.append('section', reportFilters.section);
       if (reportFilters.fee_type) queryParams.append('fee_type', reportFilters.fee_type);
+      if (schoolScope.scopeParams.school_id) queryParams.append('school_id', String(schoolScope.scopeParams.school_id));
 
       const res = await adminApi.fees.feeGetReport(queryParams);
 
@@ -1217,6 +1248,7 @@ export default function FeesManagementPage() {
       const queryParams = new URLSearchParams();
       queryParams.append('academic_year', reportFilters.academic_year);
       if (reportFilters.fee_type) queryParams.append('fee_type', reportFilters.fee_type);
+      if (schoolScope.scopeParams.school_id) queryParams.append('school_id', String(schoolScope.scopeParams.school_id));
 
       const res = await adminApi.fees.feeGetReportDue(queryParams);
 
@@ -1253,7 +1285,8 @@ export default function FeesManagementPage() {
     try {
       const res = await adminApi.fees.feeStudentSummary({
         student_id: effectiveStudentId,
-        academic_year: effectiveAcademicYear
+        academic_year: effectiveAcademicYear,
+        ...schoolScope.scopeParams,
       });
       const data = extractApiPayload(res.data);
       setStudentFeeSummaryReport(data);
@@ -1265,7 +1298,7 @@ export default function FeesManagementPage() {
     } finally {
       setLoading(false);
     }
-  }, [studentReportFilters.student_id, studentReportFilters.academic_year]);
+  }, [studentReportFilters.student_id, studentReportFilters.academic_year, schoolScope.selectedSchoolId]);
 
   // Fetch daily collection
   const fetchDailyCollection = useCallback(async () => {
@@ -1279,6 +1312,7 @@ export default function FeesManagementPage() {
         queryParams.append('from_date', dateRange.from);
         queryParams.append('to_date', dateRange.to);
       }
+      if (schoolScope.scopeParams.school_id) queryParams.append('school_id', String(schoolScope.scopeParams.school_id));
 
       const res = await adminApi.fees.feeDailyReport(queryParams);
 
@@ -1297,7 +1331,7 @@ export default function FeesManagementPage() {
     } finally {
       setLoading(false);
     }
-  }, [dateRange.from, dateRange.to]);
+  }, [dateRange.from, dateRange.to, schoolScope.selectedSchoolId]);
 
   // Fetch summary data for top cards without changing active tab
   const fetchQuickStats = useCallback(async () => {
@@ -1306,10 +1340,12 @@ export default function FeesManagementPage() {
     try {
       const dueParams = new URLSearchParams();
       dueParams.append('academic_year', currentAcademicYear);
+      if (schoolScope.scopeParams.school_id) dueParams.append('school_id', String(schoolScope.scopeParams.school_id));
 
       const today = format(new Date(), 'yyyy-MM-dd');
       const dailyParams = new URLSearchParams();
       dailyParams.append('date', today);
+      if (schoolScope.scopeParams.school_id) dailyParams.append('school_id', String(schoolScope.scopeParams.school_id));
 
       const [dueRes, dailyRes] = await Promise.all([
         adminApi.fees.feeGetReportDue(dueParams),
@@ -1329,14 +1365,14 @@ export default function FeesManagementPage() {
     } catch (error) {
       console.error('Error fetching fees quick stats:', error);
     }
-  }, [currentAcademicYear]);
+  }, [currentAcademicYear, schoolScope.selectedSchoolId]);
 
   const fetchFeeStatsCards = useCallback(async () => {
     if (!currentAcademicYear) return;
 
     setLoadingFeeStatsCards(true);
     try {
-      const res = await adminApi.fees.feeStatsCards({ academic_year: currentAcademicYear });
+      const res = await adminApi.fees.feeStatsCards({ academic_year: currentAcademicYear, ...schoolScope.scopeParams });
       const data = extractApiPayload(res.data);
       if (data?.cards) {
         setFeeStatsCards(data);
@@ -1346,7 +1382,7 @@ export default function FeesManagementPage() {
     } finally {
       setLoadingFeeStatsCards(false);
     }
-  }, [currentAcademicYear]);
+  }, [currentAcademicYear, schoolScope.selectedSchoolId]);
 
   // Fetch receipt
   const fetchReceipt = async (transactionId: string) => {
@@ -1676,13 +1712,13 @@ export default function FeesManagementPage() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [filterYear, filterClass, filterType, structureSearchQuery]);
+  }, [filterYear, filterClass, filterType, structureSearchQuery, schoolScope.selectedSchoolId]);
 
   useEffect(() => {
     fetchAcademicYears();
     fetchStandardsAndSections();
     fetchFeeTypes();
-  }, [fetchAcademicYears, fetchStandardsAndSections, fetchFeeTypes]);
+  }, [fetchAcademicYears, fetchStandardsAndSections, fetchFeeTypes, schoolScope.selectedSchoolId]);
 
   useEffect(() => {
     if (currentAcademicYear) {
@@ -1763,6 +1799,73 @@ export default function FeesManagementPage() {
     window.location.href = '/admin/students/allstudents';
   };
 
+  const resetAssignFeeForm = () => {
+    setAssignFeeTypeMode('existing');
+    setAssignFeeData({
+      academic_year: currentAcademicYear,
+      class_name: '',
+      fee_type: '',
+      amount: '',
+      installment_count: '1',
+      due_date: format(new Date().setMonth(new Date().getMonth() + 1), 'yyyy-MM-dd'),
+      override_existing: false
+    });
+  };
+
+  const openAssignFeeModal = () => {
+    resetAssignFeeForm();
+    setShowAssignModal(true);
+  };
+
+  const renderAssignFeeTypeField = () => {
+    const isNewFeeType = assignFeeTypeMode === 'new';
+
+    return (
+      <div>
+        <label className={combine("block text-sm font-medium mb-2", get('text', 'primary'))}>
+          Fee Type <span className="text-red-500">*</span>
+        </label>
+        <select
+          value={isNewFeeType ? '__new__' : assignFeeData.fee_type}
+          onChange={(e) => {
+            if (e.target.value === '__new__') {
+              setAssignFeeTypeMode('new');
+              setAssignFeeData({ ...assignFeeData, fee_type: '' });
+              return;
+            }
+            setAssignFeeTypeMode('existing');
+            setAssignFeeData({ ...assignFeeData, fee_type: e.target.value });
+          }}
+          required
+          className={getInputClass()}
+        >
+          <option value="">Select Fee Type</option>
+          {feeTypes.map(type => (
+            <option key={type} value={type}>{type}</option>
+          ))}
+          <option value="__new__">+ Add new fee type</option>
+        </select>
+
+        {isNewFeeType && (
+          <div className="mt-3">
+            <input
+              type="text"
+              value={assignFeeData.fee_type}
+              onChange={(e) => setAssignFeeData({ ...assignFeeData, fee_type: e.target.value })}
+              required
+              maxLength={50}
+              className={getInputClass()}
+              placeholder="Enter new fee type, e.g., Exam Fee"
+            />
+            <p className={combine("text-xs mt-1", get('text', 'tertiary'))}>
+              New fee types are saved when this fee is assigned.
+            </p>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // ============ RENDER ============
 
   return (
@@ -1804,6 +1907,7 @@ export default function FeesManagementPage() {
   </div>
 
   <div className="flex items-stretch sm:items-center flex-wrap gap-2 w-full lg:w-auto lg:flex-nowrap">
+    <SchoolScopeSelector {...schoolScope} className="w-full sm:w-auto" />
     {showRedirectBackButton && (
       <button
         onClick={handleRedirectBack}
@@ -1839,7 +1943,7 @@ export default function FeesManagementPage() {
 
     {showManagementTabs && (
       <button
-        onClick={() => setShowAssignModal(true)}
+        onClick={openAssignFeeModal}
         className={combine(
           getPrimaryButtonClass("blue"),
           "w-full sm:w-auto flex items-center justify-center gap-2 whitespace-nowrap"
@@ -2180,7 +2284,7 @@ export default function FeesManagementPage() {
 
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => setShowAssignModal(true)}
+                      onClick={openAssignFeeModal}
                       className={combine(getPrimaryButtonClass(), "flex items-center gap-2")}
                     >
                       <FaPlus className="text-sm" />
@@ -2228,7 +2332,7 @@ export default function FeesManagementPage() {
                         : 'Assign your first fee structure to get started'}
                     </p>
                     <button
-                      onClick={() => setShowAssignModal(true)}
+                      onClick={openAssignFeeModal}
                       className={combine(getPrimaryButtonClass(), "flex items-center gap-2 mx-auto")}
                     >
                       <FaPlus className="text-sm" />
@@ -2520,33 +2624,7 @@ export default function FeesManagementPage() {
                     </select>
                   </div>
 
-                  <div>
-                    <label className={combine("block text-sm font-medium mb-2", get('text', 'primary'))}>
-                      Fee Type <span className="text-red-500">*</span>
-                    </label>
-                    {feeTypes.length > 0 ? (
-                      <select
-                        value={assignFeeData.fee_type}
-                        onChange={(e) => setAssignFeeData({ ...assignFeeData, fee_type: e.target.value })}
-                        required
-                        className={getInputClass()}
-                      >
-                        <option value="">Select Fee Type</option>
-                        {feeTypes.map(type => (
-                          <option key={type} value={type}>{type}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        type="text"
-                        value={assignFeeData.fee_type}
-                        onChange={(e) => setAssignFeeData({ ...assignFeeData, fee_type: e.target.value })}
-                        required
-                        className={getInputClass()}
-                        placeholder="e.g., Tuition, Transport"
-                      />
-                    )}
-                  </div>
+                  {renderAssignFeeTypeField()}
 
                   <div>
                     <label className={combine("block text-sm font-medium mb-2", get('text', 'primary'))}>
@@ -2611,15 +2689,7 @@ export default function FeesManagementPage() {
                 <div className={combine("flex gap-2 pt-4 border-t", get('border', 'primary'))}>
                   <button
                     type="button"
-                    onClick={() => setAssignFeeData({
-                      academic_year: currentAcademicYear,
-                      class_name: '',
-                      fee_type: '',
-                      amount: '',
-                      installment_count: '1',
-                      due_date: format(new Date().setMonth(new Date().getMonth() + 1), 'yyyy-MM-dd'),
-                      override_existing: false
-                    })}
+                    onClick={resetAssignFeeForm}
                     className={combine(getSecondaryButtonClass(), "flex-1")}
                   >
                     Clear
@@ -3999,31 +4069,7 @@ export default function FeesManagementPage() {
                 </select>
               </div>
 
-              <div>
-                <label className={combine("block text-sm font-medium mb-2", get('text', 'primary'))}>
-                  Fee Type <span className="text-red-500">*</span>
-                </label>
-                {feeTypes.length > 0 ? (
-                  <select
-                    value={assignFeeData.fee_type}
-                    onChange={(e) => setAssignFeeData({ ...assignFeeData, fee_type: e.target.value })}
-                    className={getInputClass()}
-                  >
-                    <option value="">Select Fee Type</option>
-                    {feeTypes.map(type => (
-                      <option key={type} value={type}>{type}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <input
-                    type="text"
-                    value={assignFeeData.fee_type}
-                    onChange={(e) => setAssignFeeData({ ...assignFeeData, fee_type: e.target.value })}
-                    className={getInputClass()}
-                    placeholder="Enter fee type"
-                  />
-                )}
-              </div>
+              {renderAssignFeeTypeField()}
 
               <div>
                 <label className={combine("block text-sm font-medium mb-2", get('text', 'primary'))}>

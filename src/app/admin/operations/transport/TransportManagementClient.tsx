@@ -63,6 +63,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { useThemeClasses } from '@/hooks/useThemeClasses';
 import { toastSuccess, toastError, toastInfo, toastWarning } from '@/lib/toast';
 import { requestSidebarCountsRefresh } from '@/lib/sidebar-counts-sync';
+import { SchoolScopeSelector, useSchoolScope } from '@/components/admin/SchoolScopeSelector';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -80,6 +81,10 @@ interface Route {
   vehicle: number;
   start_location: string;
   end_location: string;
+  morning_start_location?: string;
+  morning_end_location?: string;
+  evening_start_location?: string;
+  evening_end_location?: string;
   stops: Stop[];
   is_active?: boolean;
   bus_number?: string;
@@ -87,6 +92,7 @@ interface Route {
 
 interface Stop {
   id: number;
+  trip_type?: 'Morning' | 'Evening';
   stop_name: string;
   order_number: number;
   arrival_time: string;
@@ -140,6 +146,42 @@ interface AllocationData {
 }
 
 type PassengerType = 'Student' | 'Teacher' | 'Staff';
+type TripType = 'Morning' | 'Evening';
+
+interface RouteStopDraft {
+  name: string;
+  time: string;
+  order: number;
+  latitude: string;
+  longitude: string;
+}
+
+const emptyRouteForm = () => ({
+  bus_number: '',
+  start: '',
+  end: '',
+  morning_start: '',
+  morning_end: '',
+  evening_start: '',
+  evening_end: '',
+  trips: {
+    Morning: [] as RouteStopDraft[],
+    Evening: [] as RouteStopDraft[],
+  },
+});
+
+const tripMeta: Record<TripType, { label: string; description: string; defaultTime: string }> = {
+  Morning: {
+    label: 'Morning Pickup',
+    description: 'Pickup route towards school',
+    defaultTime: '08:00',
+  },
+  Evening: {
+    label: 'Evening Drop',
+    description: 'Drop route from school',
+    defaultTime: '16:00',
+  },
+};
 
 interface CandidatePassengerRow {
   type: PassengerType;
@@ -210,6 +252,7 @@ type ViewMode = 'buses' | 'routes' | 'assignments' | 'passengers' | 'attendance'
 export default function TransportManagementPage() {
   const { theme } = useTheme();
   const { get, combine } = useThemeClasses();
+  const schoolScope = useSchoolScope({ storageKey: 'operations_transport_school_scope' });
   const [mode, setMode] = useState<ViewMode>('buses');
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -249,15 +292,12 @@ export default function TransportManagementPage() {
     capacity: 20
   });
   
-  const [routeForm, setRouteForm] = useState({
-    bus_number: '',
-    start: '',
-    end: '',
-    stops: [] as Array<{name: string, time: string, order: number, latitude: string, longitude: string}>
-  });
+  const [routeForm, setRouteForm] = useState(emptyRouteForm);
+  const [activeRouteTrip, setActiveRouteTrip] = useState<TripType>('Morning');
   
   const [stopForm, setStopForm] = useState({
     stop_id: 0,
+    trip_type: 'Morning' as TripType,
     name: '',
     time: '',
     order: 0,
@@ -293,6 +333,7 @@ export default function TransportManagementPage() {
   const [locationPickerState, setLocationPickerState] = useState<{
     isOpen: boolean;
     target: 'route_stop' | 'edit_stop';
+    trip: TripType;
     stopIndex: number | null;
     center: [number, number];
     selected: [number, number] | null;
@@ -300,6 +341,7 @@ export default function TransportManagementPage() {
   }>({
     isOpen: false,
     target: 'route_stop',
+    trip: 'Morning',
     stopIndex: null,
     center: [13.0827, 80.2707],
     selected: null,
@@ -330,6 +372,65 @@ export default function TransportManagementPage() {
   const formatTime = (time: string) => {
     return time.substring(0, 5);
   };
+
+  const getRouteTripStops = (route: Route, trip: TripType) => (
+    route.stops
+      .filter(stop => (stop.trip_type || 'Morning') === trip)
+      .slice()
+      .sort((a, b) => a.order_number - b.order_number)
+  );
+
+  const getRouteTripLocation = (route: Route, trip: TripType, point: 'start' | 'end') => {
+    if (trip === 'Morning') {
+      return point === 'start'
+        ? (route.morning_start_location || route.start_location)
+        : (route.morning_end_location || route.end_location);
+    }
+
+    return point === 'start'
+      ? (route.evening_start_location || route.end_location)
+      : (route.evening_end_location || route.start_location);
+  };
+
+  const buildRouteFormFromRoute = (busNumber: string, route?: Route | null) => {
+    if (!route) {
+      return {
+        ...emptyRouteForm(),
+        bus_number: busNumber,
+      };
+    }
+
+    const morningStops = getRouteTripStops(route, 'Morning');
+    const eveningStops = getRouteTripStops(route, 'Evening');
+
+    return {
+      bus_number: busNumber,
+      start: route.start_location || '',
+      end: route.end_location || '',
+      morning_start: getRouteTripLocation(route, 'Morning', 'start'),
+      morning_end: getRouteTripLocation(route, 'Morning', 'end'),
+      evening_start: getRouteTripLocation(route, 'Evening', 'start'),
+      evening_end: getRouteTripLocation(route, 'Evening', 'end'),
+      trips: {
+        Morning: morningStops.map(stop => ({
+          name: stop.stop_name,
+          time: stop.arrival_time.substring(0, 5),
+          order: stop.order_number,
+          latitude: stop.latitude?.toString() || '',
+          longitude: stop.longitude?.toString() || '',
+        })),
+        Evening: eveningStops.map(stop => ({
+          name: stop.stop_name,
+          time: stop.arrival_time.substring(0, 5),
+          order: stop.order_number,
+          latitude: stop.latitude?.toString() || '',
+          longitude: stop.longitude?.toString() || '',
+        })),
+      },
+    };
+  };
+
+  const activeRouteStops = routeForm.trips[activeRouteTrip] || [];
 
   const makePassengerKey = (type: PassengerType, id: string) => `${type}:${id}`;
 
@@ -539,7 +640,7 @@ const confirmDelete = (
   const fetchVehicles = async () => {
     setLoading(true);
     try {
-      const response = await adminApi.transport.vehicles.list();
+      const response = await adminApi.transport.vehicles.list(schoolScope.scopeParams);
       const data = response.data;
       console.log('Vehicles data:', data);
       const vehiclesList = Array.isArray(data.data) ? data.data : [];
@@ -572,7 +673,10 @@ const confirmDelete = (
     setLoading(true);
     
     try {
-      const response = await adminApi.transport.vehicles.create(busForm);
+      const response = await adminApi.transport.vehicles.create({
+        ...busForm,
+        ...schoolScope.scopeParams,
+      });
       const data = response.data;
 
       if (response.status === 200) {
@@ -608,7 +712,7 @@ const confirmDelete = (
     onConfirm: async () => {
       setDeleting(true);
       try {
-        const response = await adminApi.transport.vehicles.delete(busId);
+        const response = await adminApi.transport.vehicles.delete(busId, schoolScope.scopeParams);
         if (response.status === 200) {
           const data = response.data;
           toastSuccess(data.message || 'Bus deleted successfully');
@@ -638,7 +742,7 @@ const confirmDelete = (
     }
     
     try {
-      const response = await adminApi.transport.routes.byBus(busNumber);
+      const response = await adminApi.transport.routes.byBus(busNumber, schoolScope.scopeParams);
       if (response.status === 200) {
         const payload: RouteResponse = response.data;
         return payload.data || null;
@@ -672,7 +776,7 @@ const confirmDelete = (
 
     setStopsLoading(true);
     try {
-      const response = await adminApi.transport.routes.byBus(busNumber);
+      const response = await adminApi.transport.routes.byBus(busNumber, schoolScope.scopeParams);
       if (response.status === 200) {
         const payload: RouteResponse = response.data;
         setAssignmentBusStops(payload.data?.stops || []);
@@ -716,7 +820,7 @@ const confirmDelete = (
 
     try {
 
-      const formattedStops = routeForm.stops.map(stop => ({
+      const formatStops = (stops: RouteStopDraft[]) => stops.map(stop => ({
         name: stop.name,
         time: stop.time,
         order: stop.order,
@@ -726,20 +830,38 @@ const confirmDelete = (
 
       const payload = {
         bus_number: routeForm.bus_number,
-        start: routeForm.start,
-        end: routeForm.end,
-        stops: formattedStops
+        start: routeForm.morning_start,
+        end: routeForm.morning_end,
+        morning_start: routeForm.morning_start,
+        morning_end: routeForm.morning_end,
+        evening_start: routeForm.evening_start,
+        evening_end: routeForm.evening_end,
+        trips: {
+          morning: {
+            start: routeForm.morning_start,
+            end: routeForm.morning_end,
+            stops: formatStops(routeForm.trips.Morning),
+          },
+          evening: {
+            start: routeForm.evening_start,
+            end: routeForm.evening_end,
+            stops: formatStops(routeForm.trips.Evening),
+          },
+        },
       };
 
       console.log('Sending route payload:', payload);
 
-      const response = await adminApi.transport.routes.create(payload);
+      const response = await adminApi.transport.routes.create({
+        ...payload,
+        ...schoolScope.scopeParams,
+      });
       const data = response.data;
 
       if (response.status === 200) {
         toastSuccess(data.message || 'Route updated successfully');
         setMode('routes');
-        setRouteForm({ bus_number: '', start: '', end: '', stops: [] });
+        setRouteForm(emptyRouteForm());
         fetchAllRoutes();
         fetchVehicles();
         requestSidebarCountsRefresh();
@@ -763,7 +885,7 @@ const confirmDelete = (
     onConfirm: async () => {
       setDeleting(true);
       try {
-        const response = await adminApi.transport.routes.deleteByBus(busNumber);
+        const response = await adminApi.transport.routes.deleteByBus(busNumber, schoolScope.scopeParams);
         if (response.status === 200) {
           const data = response.data;
           toastSuccess(data.message || `Route deleted for Bus ${busNumber}`);
@@ -790,6 +912,7 @@ const confirmDelete = (
     try {
       const payload = {
         stop_id: stopForm.stop_id,
+        trip_type: stopForm.trip_type,
         name: stopForm.name,
         time: stopForm.time,
         order: stopForm.order,
@@ -797,14 +920,17 @@ const confirmDelete = (
         longitude: stopForm.longitude === '' ? null : Number(stopForm.longitude)
       };
 
-      const response = await adminApi.transport.stops.update(payload);
+      const response = await adminApi.transport.stops.update({
+        ...payload,
+        ...schoolScope.scopeParams,
+      });
       const data = response.data;
 
       if (response.status === 200) {
         toastSuccess(data.message || 'Stop updated successfully');
         setMode('routes');
         setSelectedStop(null);
-        setStopForm({ stop_id: 0, name: '', time: '', order: 0, latitude: '', longitude: '' });
+        setStopForm({ stop_id: 0, trip_type: 'Morning', name: '', time: '', order: 0, latitude: '', longitude: '' });
         fetchAllRoutes();
         requestSidebarCountsRefresh();
       } else {
@@ -826,7 +952,7 @@ const confirmDelete = (
     onConfirm: async () => {
       setDeleting(true);
       try {
-        const response = await adminApi.transport.stops.delete(stopId);
+        const response = await adminApi.transport.stops.delete(stopId, schoolScope.scopeParams);
         if (response.status === 200) {
           const data = response.data;
           toastSuccess(data.message || 'Stop deleted successfully');
@@ -856,7 +982,7 @@ const confirmDelete = (
     setBulkAssignForm((prev) => ({ ...prev, bus_number: busNumber }));
 
     try {
-      const response = await adminApi.transport.passengers.list(busNumber);
+      const response = await adminApi.transport.passengers.list(busNumber, schoolScope.scopeParams);
 
       if (response.status === 200) {
         const data: PassengerListResponse = response.data;
@@ -883,7 +1009,7 @@ const confirmDelete = (
 
   const fetchAllocation = async (busNumber: string) => {
     try {
-      const response = await adminApi.transport.allocation.byBus(busNumber);
+      const response = await adminApi.transport.allocation.byBus(busNumber, schoolScope.scopeParams);
 
       if (response.status === 200) {
         const data = response.data;
@@ -1026,7 +1152,10 @@ const confirmDelete = (
 
       console.log('Sending bulk assignment payload:', payload);
 
-      const response = await adminApi.transport.allocation.create(payload);
+      const response = await adminApi.transport.allocation.create({
+        ...payload,
+        ...schoolScope.scopeParams,
+      });
       const data: AllocationResponse = response.data;
       console.log('Bulk assignment response:', data);
 
@@ -1061,7 +1190,8 @@ const confirmDelete = (
         bus_number: busNumber,
         students: students,
         teachers: teachers,
-        staff: staff
+        staff: staff,
+        ...schoolScope.scopeParams,
       };
 
       const response = await adminApi.transport.allocation.delete(payload);
@@ -1083,7 +1213,7 @@ const confirmDelete = (
   // 5. DRIVER ASSIGNMENT API's
   const fetchDriverForBus = async (busNumber: string) => {
     try {
-      const response = await adminApi.transport.drivers.byBus(busNumber);
+      const response = await adminApi.transport.drivers.byBus(busNumber, schoolScope.scopeParams);
 
       if (response.status === 200) {
         const data: DriverAssignmentResponse = response.data;
@@ -1103,7 +1233,10 @@ const confirmDelete = (
     try {
       console.log('Sending driver assignment:', driverAssignForm);
       
-      const response = await adminApi.transport.drivers.assign(driverAssignForm);
+      const response = await adminApi.transport.drivers.assign({
+        ...driverAssignForm,
+        ...schoolScope.scopeParams,
+      });
       const data = response.data;
       console.log('Driver assignment response:', data);
 
@@ -1161,7 +1294,7 @@ const confirmDelete = (
     onConfirm: async () => {
       setDeleting(true);
       try {
-        const response = await adminApi.transport.drivers.unassign(busNumber);
+        const response = await adminApi.transport.drivers.unassign(busNumber, schoolScope.scopeParams);
         if (response.status === 200) {
           const data = response.data;
           toastSuccess(data.message || 'Driver unassigned successfully');
@@ -1186,6 +1319,7 @@ const confirmDelete = (
         date: date || undefined,
         month: month || undefined,
         year: year || undefined,
+        ...schoolScope.scopeParams,
       });
 
       if (response.status === 200) {
@@ -1204,7 +1338,7 @@ const confirmDelete = (
   // 7. Fetch supporting data
   const fetchTransportStaff = async () => {
     try {
-      const response = await adminApi.staff.list();
+      const response = await adminApi.staff.list(schoolScope.scopeParams);
       const data = response.data;
       const staffList = Array.isArray(data) ? data : (data.data || []);
       setAllStaff(staffList);
@@ -1230,7 +1364,7 @@ const confirmDelete = (
 
   const fetchStudents = async () => {
     try {
-      const response = await adminApi.students.list();
+      const response = await adminApi.students.list(schoolScope.scopeParams);
       const data = response.data;
       const studentsList = Array.isArray(data) ? data : (data.data || []);
       setStudents(studentsList);
@@ -1241,7 +1375,7 @@ const confirmDelete = (
 
   const fetchTeachers = async () => {
     try {
-      const response = await adminApi.teachers.list();
+      const response = await adminApi.teachers.list(schoolScope.scopeParams);
       const data = response.data;
       const teachersList = Array.isArray(data) ? data : (data.data || []);
       setTeachers(teachersList);
@@ -1252,29 +1386,47 @@ const confirmDelete = (
 
   // Form handlers
   const addStop = () => {
-    const newOrder = routeForm.stops.length + 1;
-    setRouteForm({
-      ...routeForm,
-      stops: [...routeForm.stops, { name: '', time: '08:00', order: newOrder, latitude: '', longitude: '' }]
-    });
+    const newOrder = activeRouteStops.length + 1;
+    setRouteForm((prev) => ({
+      ...prev,
+      trips: {
+        ...prev.trips,
+        [activeRouteTrip]: [
+          ...prev.trips[activeRouteTrip],
+          { name: '', time: tripMeta[activeRouteTrip].defaultTime, order: newOrder, latitude: '', longitude: '' }
+        ]
+      }
+    }));
   };
 
   const updateStopForm = (index: number, field: 'name' | 'time' | 'latitude' | 'longitude', value: string) => {
     setRouteForm((prev) => {
-      const newStops = [...prev.stops];
+      const newStops = [...prev.trips[activeRouteTrip]];
       newStops[index] = { ...newStops[index], [field]: value };
-      return { ...prev, stops: newStops };
+      return {
+        ...prev,
+        trips: {
+          ...prev.trips,
+          [activeRouteTrip]: newStops,
+        },
+      };
     });
   };
 
   const removeStopForm = (index: number) => {
-    const newStops = routeForm.stops.filter((_, i) => i !== index);
+    const newStops = activeRouteStops.filter((_, i) => i !== index);
     const reorderedStops = newStops.map((stop, idx) => ({ ...stop, order: idx + 1 }));
-    setRouteForm({ ...routeForm, stops: reorderedStops });
+    setRouteForm({
+      ...routeForm,
+      trips: {
+        ...routeForm.trips,
+        [activeRouteTrip]: reorderedStops,
+      },
+    });
   };
 
   const openStopLocationPicker = (index: number) => {
-    const stop = routeForm.stops[index];
+    const stop = activeRouteStops[index];
     const lat = stop?.latitude !== '' ? Number(stop.latitude) : null;
     const lng = stop?.longitude !== '' ? Number(stop.longitude) : null;
     const hasValidCoords =
@@ -1286,6 +1438,7 @@ const confirmDelete = (
     setLocationPickerState((prev) => ({
       isOpen: true,
       target: 'route_stop',
+      trip: activeRouteTrip,
       stopIndex: index,
       center: hasValidCoords ? [lat as number, lng as number] : [13.0827, 80.2707],
       selected: hasValidCoords ? [lat as number, lng as number] : null,
@@ -1305,6 +1458,7 @@ const confirmDelete = (
     setLocationPickerState((prev) => ({
       isOpen: true,
       target: 'edit_stop',
+      trip: stopForm.trip_type,
       stopIndex: null,
       center: hasValidCoords ? [lat as number, lng as number] : [13.0827, 80.2707],
       selected: hasValidCoords ? [lat as number, lng as number] : null,
@@ -1317,6 +1471,7 @@ const confirmDelete = (
       ...prev,
       isOpen: false,
       target: 'route_stop',
+      trip: 'Morning',
       stopIndex: null,
       selected: null,
     }));
@@ -1352,6 +1507,7 @@ const confirmDelete = (
 
     const stopIndex = locationPickerState.stopIndex;
     const target = locationPickerState.target;
+    const targetTrip = locationPickerState.trip;
     map.on('click', (event: L.LeafletMouseEvent) => {
       const lat = event.latlng.lat;
       const lng = event.latlng.lng;
@@ -1375,14 +1531,20 @@ const confirmDelete = (
         }));
       } else if (stopIndex !== null) {
         setRouteForm((prev) => {
-          const newStops = [...prev.stops];
+          const newStops = [...prev.trips[targetTrip]];
           if (!newStops[stopIndex]) return prev;
           newStops[stopIndex] = {
             ...newStops[stopIndex],
             latitude: lat.toString(),
             longitude: lng.toString(),
           };
-          return { ...prev, stops: newStops };
+          return {
+            ...prev,
+            trips: {
+              ...prev.trips,
+              [targetTrip]: newStops,
+            },
+          };
         });
       }
     });
@@ -1400,23 +1562,30 @@ const confirmDelete = (
       }
       locationPickerMarkerRef.current = null;
     };
-  }, [locationPickerState.isOpen, locationPickerState.mapKey, locationPickerState.center, locationPickerState.selected, locationPickerState.stopIndex, locationPickerState.target]);
+  }, [locationPickerState.isOpen, locationPickerState.mapKey, locationPickerState.center, locationPickerState.selected, locationPickerState.stopIndex, locationPickerState.target, locationPickerState.trip]);
 
   // Initialize data
   useEffect(() => {
+    setSelectedBus(null);
+    setPassengers([]);
+    setRoutes([]);
+    setAssignmentBusStops([]);
+    setSelectedPassengerKeys([]);
+    setSelectedPassengerStops({});
+    setBulkAssignForm({ bus_number: '', students: [], teachers: [], staff: [] });
     if (mode === 'buses' || mode === 'routes' || mode === 'assignments' || mode === 'assignDriver' || mode === 'expenses') {
       fetchVehicles();
       fetchTransportStaff();
       fetchStudents();
       fetchTeachers();
     }
-  }, [mode]);
+  }, [mode, schoolScope.selectedSchoolId]);
 
   useEffect(() => {
     if (vehicles.length > 0 && (mode === 'routes' || mode === 'buses')) {
       fetchAllRoutes();
     }
-  }, [vehicles, mode]);
+  }, [vehicles, mode, schoolScope.selectedSchoolId]);
 
   useEffect(() => {
     if (mode !== 'assignments') return;
@@ -1427,7 +1596,7 @@ const confirmDelete = (
     }
 
     loadAssignmentBusStops(bulkAssignForm.bus_number);
-  }, [mode, bulkAssignForm.bus_number, vehicles]);
+  }, [mode, bulkAssignForm.bus_number, vehicles, schoolScope.selectedSchoolId]);
 
   useEffect(() => {
     if (mode !== 'assignments' || !bulkAssignForm.bus_number) return;
@@ -1476,6 +1645,7 @@ const confirmDelete = (
     if (selectedStop && mode === 'editStop') {
       setStopForm({
         stop_id: selectedStop.id,
+        trip_type: selectedStop.trip_type || 'Morning',
         name: selectedStop.stop_name,
         time: selectedStop.arrival_time.substring(0, 5),
         order: selectedStop.order_number,
@@ -1538,6 +1708,7 @@ const confirmDelete = (
             </div>
             
             <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 w-full lg:w-auto">
+              <SchoolScopeSelector {...schoolScope} className="w-full sm:w-auto" />
               <button
                 onClick={() => {
                   setDateFilter('');
@@ -1742,7 +1913,7 @@ const confirmDelete = (
           <>
             {/* Search & Filters */}
             <div className={getCardGradientClass('blue')}>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
+	                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
                 <div className="md:col-span-2">
                   <div className="relative">
                     <FaSearch className={combine(
@@ -1953,32 +2124,13 @@ const confirmDelete = (
                     
                     {/* Action Buttons */}
                     <div className="flex space-x-2 pt-3 border-t border-gray-200 dark:border-gray-700">
-                      <button
-                        onClick={async () => {
-                          const route = await fetchRouteForBus(vehicle.bus_number);
-                          if (route) {
-                            setRouteForm({
-                              bus_number: vehicle.bus_number,
-                              start: route.start_location || '',
-                              end: route.end_location || '',
-                              stops: route.stops?.map(stop => ({
-                                name: stop.stop_name,
-                                time: stop.arrival_time.substring(0, 5),
-                                order: stop.order_number,
-                                latitude: stop.latitude?.toString() || '',
-                                longitude: stop.longitude?.toString() || ''
-                              })) || []
-                            });
-                          } else {
-                            setRouteForm({
-                              bus_number: vehicle.bus_number,
-                              start: '',
-                              end: '',
-                              stops: []
-                            });
-                          }
-                          setMode('addRoute');
-                        }}
+	                      <button
+	                        onClick={async () => {
+	                          const route = await fetchRouteForBus(vehicle.bus_number);
+	                          setRouteForm(buildRouteFormFromRoute(vehicle.bus_number, route));
+                            setActiveRouteTrip('Morning');
+	                          setMode('addRoute');
+	                        }}
                         className={combine(getSecondaryButtonClass(), "flex-1 text-center text-xs")}
                       >
                         <FaRoute className="mr-1 inline text-xs" />
@@ -2133,10 +2285,11 @@ const confirmDelete = (
                 </p>
               </div>
               <button
-                onClick={() => {
-                  setRouteForm({ bus_number: '', start: '', end: '', stops: [] });
-                  setMode('addRoute');
-                }}
+	                onClick={() => {
+	                  setRouteForm(emptyRouteForm());
+                    setActiveRouteTrip('Morning');
+	                  setMode('addRoute');
+	                }}
                 className={combine(getPrimaryButtonClass(), "flex items-center justify-center space-x-2 w-full sm:w-auto")}
               >
                 <FaPlus className="text-sm" />
@@ -2179,10 +2332,11 @@ const confirmDelete = (
                 </p>
                 {!searchTerm && (
                   <button
-                    onClick={() => {
-                      setRouteForm({ bus_number: '', start: '', end: '', stops: [] });
-                      setMode('addRoute');
-                    }}
+	                    onClick={() => {
+	                      setRouteForm(emptyRouteForm());
+                        setActiveRouteTrip('Morning');
+	                      setMode('addRoute');
+	                    }}
                     className={combine(getPrimaryButtonClass(), "mt-2")}
                   >
                     Add First Route
@@ -2227,21 +2381,11 @@ const confirmDelete = (
                       </div>
                       <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
                         <button
-                          onClick={() => {
-                            setRouteForm({
-                              bus_number: route.bus_number || '',
-                              start: route.start_location,
-                              end: route.end_location,
-                              stops: route.stops.map(stop => ({
-                                name: stop.stop_name,
-                                time: stop.arrival_time.substring(0, 5),
-                                order: stop.order_number,
-                                latitude: stop.latitude?.toString() || '',
-                                longitude: stop.longitude?.toString() || ''
-                              }))
-                            });
-                            setMode('addRoute');
-                          }}
+	                          onClick={() => {
+	                            setRouteForm(buildRouteFormFromRoute(route.bus_number || '', route));
+                              setActiveRouteTrip('Morning');
+	                            setMode('addRoute');
+	                          }}
                           className={combine(getSecondaryButtonClass(), "w-full sm:w-auto")}
                         >
                           <FaEdit className="mr-1 inline text-xs" />
@@ -2257,118 +2401,121 @@ const confirmDelete = (
                       </div>
                     </div>
 
-                    {/* Route Map Visualization */}
-                    <div className="relative mb-4 sm:mb-6">
-                      <div className="flex items-center">
-                        <div className={combine(
-                          "w-3 h-3 rounded-full",
-                          theme === 'dark' ? 'bg-emerald-400' : 'bg-emerald-500'
-                        )}></div>
-                        <div className={combine(
-                          "flex-1 h-0.5",
-                          theme === 'dark' ? 'bg-gray-600' : 'bg-gray-300'
-                        )}></div>
-                        <div className={combine(
-                          "w-3 h-3 rounded-full",
-                          theme === 'dark' ? 'bg-red-400' : 'bg-red-500'
-                        )}></div>
-                      </div>
-                      <div className="flex justify-between gap-3 mt-2">
-                        <div className="min-w-0 flex-1">
-                          <p className={combine("text-xs font-medium", get('text', 'tertiary'))}>Start</p>
-                          <p className={combine("text-xs sm:text-sm font-semibold break-words", get('text', 'primary'))}>
-                            {route.start_location}
-                          </p>
-                        </div>
-                        <div className="text-right min-w-0 flex-1">
-                          <p className={combine("text-xs font-medium", get('text', 'tertiary'))}>End</p>
-                          <p className={combine("text-xs sm:text-sm font-semibold break-words", get('text', 'primary'))}>
-                            {route.end_location}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
+                      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                        {(['Morning', 'Evening'] as TripType[]).map((trip) => {
+                          const tripStops = getRouteTripStops(route, trip);
+                          const startLocation = getRouteTripLocation(route, trip, 'start');
+                          const endLocation = getRouteTripLocation(route, trip, 'end');
 
-                    {/* Stops List */}
-                    <div>
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
-                        <h5 className={combine("text-xs sm:text-sm font-semibold", get('text', 'primary'))}>
-                          <FaMapPin className="inline mr-1 text-xs" />
-                          Bus Stops ({route.stops.length})
-                        </h5>
-                        <span className={combine("text-xs", get('text', 'tertiary'))}>
-                          Total journey: {route.stops.length > 0 ? 
-                            `${formatTime(route.stops[0].arrival_time)} - ${formatTime(route.stops[route.stops.length-1].arrival_time)}` 
-                            : 'No stops'}
-                        </span>
-                      </div>
-                      <div className="space-y-2 sm:space-y-3">
-                        {route.stops
-                          .sort((a, b) => a.order_number - b.order_number)
-                          .map((stop, index) => (
-                            <div 
-                              key={stop.id} 
+                          return (
+                            <div
+                              key={`${route.id}-${trip}`}
                               className={combine(
-                                "flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-2.5 sm:p-3 rounded-lg",
-                                theme === 'dark' ? 'bg-gray-800 hover:bg-gray-700' : 'bg-gray-50 hover:bg-gray-100',
-                                "transition-colors duration-200"
+                                "rounded-xl border p-3 sm:p-4",
+                                trip === 'Morning'
+                                  ? theme === 'dark' ? 'border-sky-800/60 bg-sky-950/20' : 'border-sky-100 bg-sky-50/70'
+                                  : theme === 'dark' ? 'border-indigo-800/60 bg-indigo-950/20' : 'border-indigo-100 bg-indigo-50/70'
                               )}
                             >
-                              <div className="flex items-center space-x-3">
-                                <div className={combine(
-                                  "h-7 w-7 sm:h-8 sm:w-8 rounded-full flex items-center justify-center text-xs sm:text-sm font-bold",
-                                  theme === 'dark' ? 'bg-blue-900/50 text-blue-400' : 'bg-blue-100 text-blue-600'
-                                )}>
-                                  {stop.order_number}
-                                </div>
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
                                 <div>
-                                  <p className={combine("text-sm sm:text-base font-medium", get('text', 'primary'))}>
-                                    {stop.stop_name}
+                                  <h5 className={combine("text-sm font-semibold", get('text', 'primary'))}>
+                                    <FaRoute className="inline mr-1 text-xs" />
+                                    {tripMeta[trip].label}
+                                  </h5>
+                                  <p className={combine("text-xs mt-0.5", get('text', 'secondary'))}>
+                                    {startLocation || 'Start not set'} to {endLocation || 'End not set'}
                                   </p>
-                                  {stop.latitude && stop.longitude && (
-                                    <p className={combine("text-xs", get('text', 'tertiary'))}>
-                                      📍 {stop.latitude.toFixed(6)}, {stop.longitude.toFixed(6)}
-                                    </p>
-                                  )}
+                                </div>
+                                <span className={combine("text-xs font-medium", get('text', 'tertiary'))}>
+                                  {tripStops.length > 0
+                                    ? `${formatTime(tripStops[0].arrival_time)} - ${formatTime(tripStops[tripStops.length - 1].arrival_time)}`
+                                    : 'No stops'}
+                                </span>
+                              </div>
+
+                              <div className="relative mb-4">
+                                <div className="flex items-center">
+                                  <div className={combine("w-3 h-3 rounded-full", theme === 'dark' ? 'bg-emerald-400' : 'bg-emerald-500')}></div>
+                                  <div className={combine("flex-1 h-0.5", theme === 'dark' ? 'bg-gray-600' : 'bg-gray-300')}></div>
+                                  <div className={combine("w-3 h-3 rounded-full", theme === 'dark' ? 'bg-red-400' : 'bg-red-500')}></div>
+                                </div>
+                                <div className="flex justify-between gap-3 mt-2">
+                                  <div className="min-w-0 flex-1">
+                                    <p className={combine("text-xs font-medium", get('text', 'tertiary'))}>Start</p>
+                                    <p className={combine("text-xs sm:text-sm font-semibold break-words", get('text', 'primary'))}>{startLocation || 'N/A'}</p>
+                                  </div>
+                                  <div className="text-right min-w-0 flex-1">
+                                    <p className={combine("text-xs font-medium", get('text', 'tertiary'))}>End</p>
+                                    <p className={combine("text-xs sm:text-sm font-semibold break-words", get('text', 'primary'))}>{endLocation || 'N/A'}</p>
+                                  </div>
                                 </div>
                               </div>
-                              <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-3 sm:gap-4">
-                                <div className="flex items-center space-x-1">
-                                  <FaClock className={combine("text-xs", get('icon', 'secondary'))} />
-                                  <span className={combine("text-xs sm:text-sm", get('text', 'primary'))}>
-                                    {stop.arrival_time.substring(0, 5)}
-                                  </span>
-                                </div>
-                                <div className="flex space-x-1">
-                                  <button
-                                    onClick={() => {
-                                      setSelectedStop(stop);
-                                      setMode('editStop');
-                                    }}
+
+                              <div className="space-y-2">
+                                {tripStops.length === 0 ? (
+                                  <div className={combine("rounded-lg border border-dashed p-4 text-center text-xs", get('border', 'secondary'), get('text', 'tertiary'))}>
+                                    No {tripMeta[trip].label.toLowerCase()} stops added
+                                  </div>
+                                ) : tripStops.map((stop) => (
+                                  <div
+                                    key={stop.id}
                                     className={combine(
-                                      "p-1.5 rounded-lg transition-colors hover:text-blue-500",
-                                      get('icon', 'secondary')
+                                      "flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-2.5 rounded-lg",
+                                      theme === 'dark' ? 'bg-gray-800 hover:bg-gray-700' : 'bg-white hover:bg-gray-50',
+                                      "transition-colors duration-200"
                                     )}
-                                    title="Edit Stop"
                                   >
-                                    <FaEdit className="text-xs" />
-                                  </button>
-                                  <button
-                                    onClick={() => deleteStop(stop.id)}
-                                    className={combine(
-                                      "p-1.5 rounded-lg transition-colors hover:text-red-500",
-                                      get('icon', 'secondary')
-                                    )}
-                                    title="Delete Stop"
-                                  >
-                                    <FaTimes className="text-xs" />
-                                  </button>
-                                </div>
+                                    <div className="flex items-center space-x-3">
+                                      <div className={combine(
+                                        "h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold",
+                                        theme === 'dark' ? 'bg-blue-900/50 text-blue-400' : 'bg-blue-100 text-blue-600'
+                                      )}>
+                                        {stop.order_number}
+                                      </div>
+                                      <div>
+                                        <p className={combine("text-sm font-medium", get('text', 'primary'))}>{stop.stop_name}</p>
+                                        {stop.latitude && stop.longitude && (
+                                          <p className={combine("text-xs", get('text', 'tertiary'))}>
+                                            {stop.latitude.toFixed(6)}, {stop.longitude.toFixed(6)}
+                                          </p>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-3">
+                                      <div className="flex items-center space-x-1">
+                                        <FaClock className={combine("text-xs", get('icon', 'secondary'))} />
+                                        <span className={combine("text-xs sm:text-sm", get('text', 'primary'))}>
+                                          {stop.arrival_time.substring(0, 5)}
+                                        </span>
+                                      </div>
+                                      <div className="flex space-x-1">
+                                        <button
+                                          onClick={() => {
+                                            setSelectedStop(stop);
+                                            setMode('editStop');
+                                          }}
+                                          className={combine("p-1.5 rounded-lg transition-colors hover:text-blue-500", get('icon', 'secondary'))}
+                                          title="Edit Stop"
+                                        >
+                                          <FaEdit className="text-xs" />
+                                        </button>
+                                        <button
+                                          onClick={() => deleteStop(stop.id)}
+                                          className={combine("p-1.5 rounded-lg transition-colors hover:text-red-500", get('icon', 'secondary'))}
+                                          title="Delete Stop"
+                                        >
+                                          <FaTimes className="text-xs" />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
                               </div>
                             </div>
-                          ))}
+                          );
+                        })}
                       </div>
-                    </div>
                   </div>
                 ))}
               </div>
@@ -2401,10 +2548,10 @@ const confirmDelete = (
                   </div>
                 </div>
                 <button
-                  onClick={() => {
-                    setMode('routes');
-                    setRouteForm({ bus_number: '', start: '', end: '', stops: [] });
-                  }}
+	                  onClick={() => {
+	                    setMode('routes');
+	                    setRouteForm(emptyRouteForm());
+	                  }}
                   className={combine(getSecondaryButtonClass(), "w-full sm:w-auto")}
                 >
                   <FaTimes className="mr-1 inline text-xs" />
@@ -2421,35 +2568,16 @@ const confirmDelete = (
                     <select
                       value={routeForm.bus_number}
                       onChange={async (e) => {
-                        const selectedBus = e.target.value;
-                        if (!selectedBus) {
-                          setRouteForm({ bus_number: '', start: '', end: '', stops: [] });
-                          return;
-                        }
+	                        const selectedBus = e.target.value;
+	                        if (!selectedBus) {
+	                          setRouteForm(emptyRouteForm());
+	                          return;
+	                        }
 
-                        const route = await fetchRouteForBus(selectedBus);
-                        if (route) {
-                          setRouteForm({
-                            bus_number: selectedBus,
-                            start: route.start_location || '',
-                            end: route.end_location || '',
-                            stops: route.stops?.map(stop => ({
-                              name: stop.stop_name,
-                              time: stop.arrival_time.substring(0, 5),
-                              order: stop.order_number,
-                              latitude: stop.latitude?.toString() || '',
-                              longitude: stop.longitude?.toString() || ''
-                            })) || []
-                          });
-                        } else {
-                          setRouteForm({
-                            bus_number: selectedBus,
-                            start: '',
-                            end: '',
-                            stops: []
-                          });
-                        }
-                      }}
+	                        const route = await fetchRouteForBus(selectedBus);
+	                        setRouteForm(buildRouteFormFromRoute(selectedBus, route));
+                          setActiveRouteTrip('Morning');
+	                      }}
                       required
                       className={getInputClass()}
                     >
@@ -2464,60 +2592,107 @@ const confirmDelete = (
                       Select the bus for this route
                     </p>
                   </div>
-                  <div>
-                    <label className={combine("block text-xs sm:text-sm font-medium mb-2", get('text', 'primary'))}>
-                      Start Location *
-                    </label>
-                    <input
-                      type="text"
-                      value={routeForm.start}
-                      onChange={(e) => setRouteForm({...routeForm, start: e.target.value})}
-                      required
-                      className={getInputClass()}
-                      placeholder="e.g., Main Campus"
-                    />
-                  </div>
-                  <div>
-                    <label className={combine("block text-xs sm:text-sm font-medium mb-2", get('text', 'primary'))}>
-                      End Location *
-                    </label>
-                    <input
-                      type="text"
-                      value={routeForm.end}
-                      onChange={(e) => setRouteForm({...routeForm, end: e.target.value})}
-                      required
-                      className={getInputClass()}
-                      placeholder="e.g., City Center"
-                    />
-                  </div>
-                </div>
-
-                {/* Stops Section */}
-                <div className={combine(
-                  "p-3 sm:p-4 rounded-lg sm:rounded-xl",
-                  theme === 'dark' ? 'bg-gray-800' : 'bg-gray-50'
-                )}>
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-                    <div>
-                      <h3 className={combine("text-base sm:text-lg font-semibold", get('text', 'primary'))}>
-                        <FaMapPin className="inline mr-2 text-sm" />
-                        Route Stops
-                      </h3>
-                      <p className={combine("text-xs mt-1", get('text', 'tertiary'))}>
-                        Add all stops along the route in order
-                      </p>
+                    <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                      <div>
+                        <label className={combine("block text-xs sm:text-sm font-medium mb-2", get('text', 'primary'))}>
+                          Morning Start *
+                        </label>
+                        <input
+                          type="text"
+                          value={routeForm.morning_start}
+                          onChange={(e) => setRouteForm({ ...routeForm, morning_start: e.target.value, start: e.target.value })}
+                          required
+                          className={getInputClass()}
+                          placeholder="e.g., Main Bus Stand"
+                        />
+                      </div>
+                      <div>
+                        <label className={combine("block text-xs sm:text-sm font-medium mb-2", get('text', 'primary'))}>
+                          Morning End *
+                        </label>
+                        <input
+                          type="text"
+                          value={routeForm.morning_end}
+                          onChange={(e) => setRouteForm({ ...routeForm, morning_end: e.target.value, end: e.target.value })}
+                          required
+                          className={getInputClass()}
+                          placeholder="e.g., School Campus"
+                        />
+                      </div>
+                      <div>
+                        <label className={combine("block text-xs sm:text-sm font-medium mb-2", get('text', 'primary'))}>
+                          Evening Start *
+                        </label>
+                        <input
+                          type="text"
+                          value={routeForm.evening_start}
+                          onChange={(e) => setRouteForm({ ...routeForm, evening_start: e.target.value })}
+                          required
+                          className={getInputClass()}
+                          placeholder="e.g., School Campus"
+                        />
+                      </div>
+                      <div>
+                        <label className={combine("block text-xs sm:text-sm font-medium mb-2", get('text', 'primary'))}>
+                          Evening End *
+                        </label>
+                        <input
+                          type="text"
+                          value={routeForm.evening_end}
+                          onChange={(e) => setRouteForm({ ...routeForm, evening_end: e.target.value })}
+                          required
+                          className={getInputClass()}
+                          placeholder="e.g., Main Bus Stand"
+                        />
+                      </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={addStop}
-                      className={combine(getSuccessButtonClass(), "w-full sm:w-auto flex items-center justify-center space-x-2")}
-                    >
-                      <FaPlus className="text-xs" />
-                      <span>Add Stop</span>
-                    </button>
-                  </div>
+	                </div>
 
-                  {routeForm.stops.length === 0 ? (
+	                {/* Stops Section */}
+	                <div className={combine(
+	                  "p-3 sm:p-4 rounded-lg sm:rounded-xl",
+	                  theme === 'dark' ? 'bg-gray-800' : 'bg-gray-50'
+	                )}>
+	                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+	                    <div>
+	                      <h3 className={combine("text-base sm:text-lg font-semibold", get('text', 'primary'))}>
+	                        <FaMapPin className="inline mr-2 text-sm" />
+	                        {tripMeta[activeRouteTrip].label} Stops
+	                      </h3>
+	                      <p className={combine("text-xs mt-1", get('text', 'tertiary'))}>
+	                        {tripMeta[activeRouteTrip].description}. Add stops in travel order.
+	                      </p>
+	                    </div>
+                      <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                        <div className={combine("grid grid-cols-2 rounded-lg border p-1", get('border', 'secondary'), get('bg', 'card'))}>
+                          {(['Morning', 'Evening'] as TripType[]).map((trip) => (
+                            <button
+                              key={trip}
+                              type="button"
+                              onClick={() => setActiveRouteTrip(trip)}
+                              className={combine(
+                                "px-3 py-2 rounded-md text-xs sm:text-sm font-medium transition-all",
+                                activeRouteTrip === trip
+                                  ? theme === 'dark' ? 'bg-blue-600 text-white' : 'bg-blue-600 text-white'
+                                  : get('text', 'secondary')
+                              )}
+                            >
+                              {trip === 'Morning' ? 'Morning' : 'Evening'}
+                            </button>
+                          ))}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={addStop}
+                          className={combine(getSuccessButtonClass(), "w-full sm:w-auto flex items-center justify-center space-x-2")}
+                        >
+                          <FaPlus className="text-xs" />
+                          <span>Add Stop</span>
+                        </button>
+                      </div>
+	                  </div>
+
+	                  {activeRouteStops.length === 0 ? (
                     <div className={combine(
                       "p-6 sm:p-8 text-center rounded-lg sm:rounded-xl border-2 border-dashed",
                       theme === 'dark' ? 'border-gray-700' : 'border-gray-300'
@@ -2530,12 +2705,12 @@ const confirmDelete = (
                         No stops added yet
                       </p>
                       <p className={combine("text-xs mt-1", get('text', 'tertiary'))}>
-                        Click "Add Stop" to start building your route
+	                        Click "Add Stop" to start building the {tripMeta[activeRouteTrip].label.toLowerCase()} route
                       </p>
                     </div>
                   ) : (
                     <div className="space-y-3 sm:space-y-4">
-                      {routeForm.stops.map((stop, index) => (
+	                      {activeRouteStops.map((stop, index) => (
                         <div 
                           key={index} 
                           className={combine(
@@ -2560,7 +2735,7 @@ const confirmDelete = (
                                     First Stop
                                   </span>
                                 )}
-                                {index === routeForm.stops.length - 1 && routeForm.stops.length > 1 && (
+	                                {index === activeRouteStops.length - 1 && activeRouteStops.length > 1 && (
                                   <span className="ml-2 px-2 py-0.5 text-xs bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 rounded-full">
                                     Last Stop
                                   </span>
@@ -2662,27 +2837,27 @@ const confirmDelete = (
                           <div>
                             <p className={combine("text-xs", get('text', 'tertiary'))}>Total Stops</p>
                             <p className={combine("text-base sm:text-lg font-bold", get('text', 'primary'))}>
-                              {routeForm.stops.length}
+	                              {activeRouteStops.length}
                             </p>
                           </div>
                           <div>
                             <p className={combine("text-xs", get('text', 'tertiary'))}>Start Time</p>
                             <p className={combine("text-base sm:text-lg font-bold", get('text', 'primary'))}>
-                              {routeForm.stops[0]?.time || 'N/A'}
+	                              {activeRouteStops[0]?.time || 'N/A'}
                             </p>
                           </div>
                           <div>
                             <p className={combine("text-xs", get('text', 'tertiary'))}>End Time</p>
                             <p className={combine("text-base sm:text-lg font-bold", get('text', 'primary'))}>
-                              {routeForm.stops[routeForm.stops.length-1]?.time || 'N/A'}
+	                              {activeRouteStops[activeRouteStops.length-1]?.time || 'N/A'}
                             </p>
                           </div>
                           <div>
                             <p className={combine("text-xs", get('text', 'tertiary'))}>Duration</p>
                             <p className={combine("text-base sm:text-lg font-bold", get('text', 'primary'))}>
-                              {routeForm.stops.length > 1 ? 
-                                `${Math.round((new Date(`1970-01-01T${routeForm.stops[routeForm.stops.length-1].time}:00`).getTime() - 
-                                  new Date(`1970-01-01T${routeForm.stops[0].time}:00`).getTime()) / 60000)} min` 
+	                              {activeRouteStops.length > 1 ? 
+	                                `${Math.round((new Date(`1970-01-01T${activeRouteStops[activeRouteStops.length-1].time}:00`).getTime() - 
+	                                  new Date(`1970-01-01T${activeRouteStops[0].time}:00`).getTime()) / 60000)} min` 
                                 : 'N/A'}
                             </p>
                           </div>
@@ -2713,7 +2888,7 @@ const confirmDelete = (
                       </>
                     )}
                   </button>
-                  {routeForm.stops.length === 0 && (
+	                  {routeForm.trips.Morning.length === 0 && routeForm.trips.Evening.length === 0 && (
                     <div className="flex items-center text-amber-600 dark:text-amber-400 text-xs">
                       <FaExclamationTriangle className="mr-1" />
                       No stops added - route will be created without stops
@@ -2763,6 +2938,20 @@ const confirmDelete = (
 
               <form onSubmit={updateStop} className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className={combine("block text-sm font-medium mb-2", get('text', 'primary'))}>
+                      Trip *
+                    </label>
+                    <select
+                      value={stopForm.trip_type}
+                      onChange={(e) => setStopForm({ ...stopForm, trip_type: e.target.value as TripType })}
+                      required
+                      className={getInputClass()}
+                    >
+                      <option value="Morning">Morning Pickup</option>
+                      <option value="Evening">Evening Drop</option>
+                    </select>
+                  </div>
                   <div>
                     <label className={combine("block text-sm font-medium mb-2", get('text', 'primary'))}>
                       Stop Name *

@@ -22,6 +22,7 @@ import {
 import { FaSchool } from 'react-icons/fa';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useThemeClasses } from '@/hooks/useThemeClasses';
+import { SchoolScopeSelector, useSchoolScope } from '@/components/admin/SchoolScopeSelector';
 
 interface Standard {
   id: number;
@@ -76,6 +77,7 @@ interface TeacherAssignment {
 export default function ClassesSectionsManager() {
   const { theme } = useTheme();
   const { get, combine } = useThemeClasses();
+  const schoolScope = useSchoolScope({ storageKey: 'academics_classes_school_scope' });
 
   const [standards, setStandards] = useState<Standard[]>([]);
   const [sections, setSections] = useState<Section[]>([]);
@@ -275,14 +277,15 @@ export default function ClassesSectionsManager() {
 
   // Fetch all data
   useEffect(() => {
+    setLoading({ standards: true, sections: true, teachers: true });
     fetchStandards();
     fetchSections();
     fetchTeachers();
-  }, []);
+  }, [schoolScope.selectedSchoolId]);
 
   const fetchStandards = async () => {
     try {
-      const response = await adminApi.academics.standards();
+      const response = await adminApi.academics.standards(schoolScope.scopeParams);
       setStandards(response.data);
     } catch (error) {
       console.log(error);
@@ -294,8 +297,8 @@ export default function ClassesSectionsManager() {
   const fetchSections = async (standardId?: string) => {
     try {
       const response = standardId
-        ? await adminApi.academics.sections(standardId)
-        : await adminApi.academics.allSections();
+        ? await adminApi.academics.sections(standardId, schoolScope.scopeParams)
+        : await adminApi.academics.allSections(schoolScope.scopeParams);
       setSections(response.data);
     } catch (error) {
       console.log(error);
@@ -306,7 +309,7 @@ export default function ClassesSectionsManager() {
 
   const fetchTeachers = async () => {
     try {
-      const response = await adminApi.teachers.list();
+      const response = await adminApi.teachers.list(schoolScope.scopeParams);
       const data = response.data;
       const teachersArray = data.teachers || data;
       setTeachers(teachersArray);
@@ -336,6 +339,7 @@ export default function ClassesSectionsManager() {
       await adminApi.academics.createStandard({
         name: newStandard.trim(),
         description: `Class ${newStandard.trim()}`,
+        ...schoolScope.scopeParams,
       });
       toastSuccess('Class created successfully');
       setNewStandard('');
@@ -353,7 +357,7 @@ export default function ClassesSectionsManager() {
 
     try {
       const standardsArray = newStandard.split(',').map(s => s.trim()).filter(s => s);
-      const response = await adminApi.academics.bulkCreateStandards(standardsArray);
+      const response = await adminApi.academics.bulkCreateStandards(standardsArray, schoolScope.scopeParams);
       const result = response.data;
       toastSuccess(`Created ${result.created_count} classes successfully`);
       setNewStandard('');
@@ -373,6 +377,7 @@ export default function ClassesSectionsManager() {
       await adminApi.academics.createSection({
         class_name: sectionData.class_name,
         section_name: sectionData.section_name,
+        ...schoolScope.scopeParams,
       });
       toastSuccess('Section created successfully');
       setSectionData({ class_name: '', section_name: '', description: '' });
@@ -395,7 +400,7 @@ export default function ClassesSectionsManager() {
     }
 
     try {
-      const response = await adminApi.academics.bulkMapSections(validMappings);
+      const response = await adminApi.academics.bulkMapSections(validMappings, schoolScope.scopeParams);
       const result = response.data;
       toastSuccess(`Created ${result.total_new_sections} new sections`);
       setNewSections([{ class_name: '', sections: [] }]);
@@ -417,6 +422,7 @@ export default function ClassesSectionsManager() {
         teacher_id: classTeacherData.teacher_id,
         class_name: classTeacherData.class_name,
         section: classTeacherData.section_name,
+        ...schoolScope.scopeParams,
       });
       toastSuccess('Class teacher assigned successfully');
       setClassTeacherData({ class_name: '', section_name: '', teacher_id: '' });
@@ -511,6 +517,7 @@ export default function ClassesSectionsManager() {
                 </p>
               </div>
             </div>
+            <SchoolScopeSelector {...schoolScope} className="w-full sm:w-auto" />
           </div>
 
           {/* Stats Cards */}

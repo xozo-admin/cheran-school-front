@@ -39,6 +39,7 @@ import { RefreshCw } from 'lucide-react';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useThemeClasses } from '@/hooks/useThemeClasses';
 import { toastSuccess, toastError, toastInfo } from '@/lib/toast';
+import { SchoolScopeSelector, useSchoolScope } from '@/components/admin/SchoolScopeSelector';
 
 interface WorkAssignment {
   task_id: number;
@@ -117,6 +118,7 @@ type DeleteType = 'task' | 'assignment' | 'recurring' | null;
 export default function WorkManagementPage() {
   const { theme } = useTheme();
   const { get, combine } = useThemeClasses();
+  const schoolScope = useSchoolScope({ storageKey: 'staff_work_school_scope' });
   const getLocalToday = () => {
     const now = new Date();
     const tzAdjusted = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
@@ -324,6 +326,7 @@ export default function WorkManagementPage() {
         status: filterStatus !== 'all' ? filterStatus : undefined,
         page: currentPage,
         page_size: itemsPerPage,
+        ...schoolScope.scopeParams,
       });
       
       // Safely extract data from response
@@ -417,7 +420,7 @@ export default function WorkManagementPage() {
 
   const fetchRecurringSchedules = async () => {
     try {
-      const response = await adminApi.staffWork.recurringList();
+      const response = await adminApi.staffWork.recurringList(schoolScope.scopeParams);
       const data = response?.data;
       setRecurringSchedules(safeArray(data));
     } catch (error) {
@@ -428,7 +431,7 @@ export default function WorkManagementPage() {
 
   const fetchStaffList = async () => {
     try {
-      const response = await adminApi.staff.list();
+      const response = await adminApi.staff.list(schoolScope.scopeParams);
       const data = response?.data;
       setStaffList(safeArray(data));
     } catch (error) {
@@ -456,13 +459,13 @@ export default function WorkManagementPage() {
     };
 
     loadInitialData();
-  }, []); // Empty dependency array - only run once on mount
+  }, [schoolScope.selectedSchoolId]);
 
   // ========== SERVER-SIDE FILTER + PAGINATION FETCH ==========
   useEffect(() => {
     if (!urlParamsProcessed) return;
     fetchWorkAssignments();
-  }, [urlParamsProcessed, currentPage, filterStaffType, selectedDate, filterStatus, searchTerm]);
+  }, [urlParamsProcessed, currentPage, filterStaffType, selectedDate, filterStatus, searchTerm, schoolScope.selectedSchoolId]);
 
   // Assign work to staff
   const assignWork = async () => {
@@ -480,7 +483,8 @@ export default function WorkManagementPage() {
 
       const payload = {
         staff_type: assignForm.staff_type,
-        tasks: tasks
+        tasks: tasks,
+        ...schoolScope.scopeParams,
       };
 
       const response = await adminApi.staffWork.assignBulk(payload);
@@ -533,7 +537,10 @@ export default function WorkManagementPage() {
         return;
       }
 
-      const response = await adminApi.staffWork.recurringCreate(payload);
+      const response = await adminApi.staffWork.recurringCreate({
+        ...payload,
+        ...schoolScope.scopeParams,
+      });
       const data = response.data;
 
       if (response.status === 200) {
@@ -567,6 +574,7 @@ export default function WorkManagementPage() {
       const response = await adminApi.staffWork.updateTask({
         task_id: selectedTask.task_id,
         new_description: editDescription.trim(),
+        ...schoolScope.scopeParams,
       });
       const data = response.data;
 
@@ -630,7 +638,7 @@ export default function WorkManagementPage() {
     setDeleting(true);
     try {
       if (deleteMode === 'recurring') {
-        const response = await adminApi.staffWork.recurringDelete(deleteId);
+        const response = await adminApi.staffWork.recurringDelete(deleteId, schoolScope.scopeParams);
         const data = response.data;
 
         if (response.status === 200) {
@@ -642,7 +650,9 @@ export default function WorkManagementPage() {
         }
       } else {
         const response = await adminApi.staffWork.deleteManage(
-          deleteMode === 'task' ? { task_id: deleteId } : { assignment_id: deleteId }
+          deleteMode === 'task'
+            ? { task_id: deleteId, ...schoolScope.scopeParams }
+            : { assignment_id: deleteId, ...schoolScope.scopeParams }
         );
         const data = response.data;
 
@@ -858,6 +868,7 @@ export default function WorkManagementPage() {
           status: filterStatus !== 'all' ? filterStatus : undefined,
           page,
           page_size: exportPageSize,
+          ...schoolScope.scopeParams,
         });
 
         const data = response?.data || {};
@@ -939,6 +950,7 @@ export default function WorkManagementPage() {
             </div>
 
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 w-full lg:w-auto">
+              <SchoolScopeSelector {...schoolScope} className="w-full sm:w-auto" />
               {showRedirectBackButton && (
                 <button
                   onClick={handleRedirectBack}

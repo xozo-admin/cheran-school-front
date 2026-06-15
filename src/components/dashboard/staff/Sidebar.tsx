@@ -141,7 +141,8 @@ export const StaffSidebar = ({
   );
 
   const sidebarHeaderClasses = combine(
-    'p-4 flex items-center justify-between'
+    'flex items-center',
+    collapsed && !isMobileLikeView ? 'justify-center px-2 py-4' : 'justify-between p-4'
   );
 
   const toggleButtonClasses = combine(
@@ -542,10 +543,10 @@ export const StaffSidebar = ({
     >
       {/* Sidebar Header */}
       <div className={sidebarHeaderClasses}>
-        {(!collapsed || isMobileLikeView) && (
+        {(!collapsed || isMobileLikeView) ? (
           <div className="flex items-center space-x-3">
             <div className="bg-gradient-to-r from-blue-500 to-blue-600 p-2 rounded-lg">
-              <FaUserTie className="w-6 h-6 text-white" />
+              <FaSchool className="w-6 h-6 text-white" />
             </div>
             <div>
               <h2 className={combine("font-bold text-base", get('text', 'primary'))}>
@@ -554,14 +555,25 @@ export const StaffSidebar = ({
               <p className={combine("text-xs font-medium", versionTextClasses)}>School Management</p>
             </div>
           </div>
+        ) : (
+          <button
+            type="button"
+            onClick={onToggle}
+            className="group relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-[var(--color-border-primary)] transition-all hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[var(--color-accent-primary)]"
+            aria-label="Expand sidebar"
+            title="Expand sidebar"
+          >
+            <FaSchool className="h-5 w-5 text-blue-600 transition-opacity group-hover:opacity-20 group-focus-visible:opacity-20" aria-hidden="true" />
+            <FaChevronRight className="absolute text-sm text-[var(--color-text-primary)] opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
+          </button>
         )}
-        {!isMobile && !isCompactScreen && (
+        {!isMobile && !isCompactScreen && !collapsed && (
           <button
             onClick={onToggle}
             className={toggleButtonClasses}
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-label="Collapse sidebar"
           >
-            {collapsed ? <FaChevronRight /> : <FaChevronLeft />}
+            <FaChevronLeft />
           </button>
         )}
       </div>

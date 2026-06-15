@@ -3,6 +3,7 @@
 import { adminApi } from '@/lib/api';
 import { useThemeClasses } from '@/hooks/useThemeClasses';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { SchoolScopeSelector, useSchoolScope } from '@/components/admin/SchoolScopeSelector';
 import { 
   FaChevronLeft, 
   FaChevronRight, 
@@ -179,6 +180,7 @@ const getStatusBadgeClass = (status: string) => {
 };
 
 export function SalaryReportsPanel({ embedded = false }: SalaryReportsPageProps) {
+  const schoolScope = useSchoolScope({ storageKey: 'salary_reports_school_scope' });
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
@@ -220,8 +222,8 @@ export function SalaryReportsPanel({ embedded = false }: SalaryReportsPageProps)
     setError(null);
 
     const [staffRes, teacherRes] = await Promise.allSettled([
-      adminApi.salary.payments.staff.list({ month, year, ...(status ? { status: status as any } : {}) }),
-      adminApi.salary.payments.teacher.list({ month, year, ...(status ? { status: status as any } : {}) }),
+      adminApi.salary.payments.staff.list({ month, year, ...(status ? { status: status as any } : {}), ...schoolScope.scopeParams }),
+      adminApi.salary.payments.teacher.list({ month, year, ...(status ? { status: status as any } : {}), ...schoolScope.scopeParams }),
     ]);
 
     let failed = false;
@@ -247,7 +249,7 @@ export function SalaryReportsPanel({ embedded = false }: SalaryReportsPageProps)
     } else {
       setLoading(false);
     }
-  }, [month, year, status]);
+  }, [month, year, status, schoolScope.selectedSchoolId]);
 
   const loadAuditData = useCallback(async () => {
     setAuditLoading(true);
@@ -260,6 +262,7 @@ export function SalaryReportsPanel({ embedded = false }: SalaryReportsPageProps)
         year,
         ...(status ? { status: status as any } : {}),
         ...(searchQuery.trim() ? { q: searchQuery.trim() } : {}),
+        ...schoolScope.scopeParams,
       });
       const payload = res?.data?.data || {};
       const logs = Array.isArray(payload.logs) ? payload.logs : [];
@@ -295,7 +298,7 @@ export function SalaryReportsPanel({ embedded = false }: SalaryReportsPageProps)
     } finally {
       setAuditLoading(false);
     }
-  }, [auditPage, auditPageSize, days, month, year, status, searchQuery]);
+  }, [auditPage, auditPageSize, days, month, year, status, searchQuery, schoolScope.selectedSchoolId]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -314,7 +317,7 @@ export function SalaryReportsPanel({ embedded = false }: SalaryReportsPageProps)
 
   useEffect(() => {
     setAuditPage(1);
-  }, [days, month, year, status, searchQuery]);
+  }, [days, month, year, status, searchQuery, schoolScope.selectedSchoolId]);
 
   useEffect(() => {
     loadAuditData();
@@ -362,6 +365,7 @@ export function SalaryReportsPanel({ embedded = false }: SalaryReportsPageProps)
         {/* Filters */}
         <div className={combine('p-4 sm:p-5 space-y-4', get('bg', 'card'))}>
           <div className="flex flex-wrap items-stretch sm:items-center gap-2 sm:gap-3">
+            <SchoolScopeSelector {...schoolScope} className="w-full sm:w-auto" />
             {/* Month/Year Selection */}
             <div className="flex items-center gap-2 bg-gray-50 dark:bg-gray-800/50 p-1 rounded-lg border border-gray-200 dark:border-gray-700 w-full sm:w-auto min-w-0">
               <FaCalendarAlt className={combine('text-sm ml-2', get('text', 'tertiary'))} />

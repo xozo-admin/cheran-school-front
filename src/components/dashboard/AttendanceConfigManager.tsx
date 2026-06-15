@@ -29,6 +29,7 @@ import { FaTrash, FaSchool } from 'react-icons/fa';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useThemeClasses } from '@/hooks/useThemeClasses';
 import { toastSuccess, toastError } from '@/lib/toast';
+import { SchoolScopeSelector, useSchoolScope } from '@/components/admin/SchoolScopeSelector';
 
 // Import Leaflet
 import L from 'leaflet';
@@ -59,7 +60,7 @@ interface QRSessionData {
   role_scope: 'teacher' | 'staff' | 'both';
   starts_at: string;
   ends_at: string;
-  rotation_seconds: number;
+  rotation_seconds?: number;
   is_active: boolean;
 }
 
@@ -78,6 +79,7 @@ const normalizeTimeForInput = (value: string): string => {
 export const AttendanceConfigManager = () => {
   const { theme } = useTheme();
   const { get, combine } = useThemeClasses();
+  const schoolScope = useSchoolScope({ storageKey: 'attendance_config_school_scope' });
 
   // Map refs
   const mapRef = useRef<HTMLDivElement>(null);
@@ -101,14 +103,10 @@ export const AttendanceConfigManager = () => {
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [userLocation, setUserLocation] = useState<{lat: number, lng: number} | null>(null);
   const [qrRoleScope, setQrRoleScope] = useState<'teacher' | 'staff' | 'both'>('both');
-  const [qrDurationMinutes, setQrDurationMinutes] = useState<number>(45);
-  const [qrRotationSeconds, setQrRotationSeconds] = useState<number>(30);
   const [qrSession, setQrSession] = useState<QRSessionData | null>(null);
   const [qrToken, setQrToken] = useState('');
   const [qrTokenExpiresAt, setQrTokenExpiresAt] = useState<string | null>(null);
-  const [qrExpiresInSec, setQrExpiresInSec] = useState<number>(0);
   const [qrBusy, setQrBusy] = useState(false);
-  const [qrRefreshing, setQrRefreshing] = useState(false);
   const [showQrFullscreen, setShowQrFullscreen] = useState(false);
 
     
@@ -517,7 +515,7 @@ export const AttendanceConfigManager = () => {
   const fetchConfig = async () => {
     try {
       setLoading(true);
-      const response = await adminApi.attendance.config.get();
+      const response = await adminApi.attendance.config.get(schoolScope.scopeParams);
       const data = response.data;
 
       if (data.message === 'Not configured') {
@@ -551,8 +549,13 @@ export const AttendanceConfigManager = () => {
   };
 
   useEffect(() => {
+    setConfig(null);
+    setQrSession(null);
+    setQrToken('');
+    setQrTokenExpiresAt(null);
+    setShowQrFullscreen(false);
     fetchConfig();
-  }, []);
+  }, [schoolScope.selectedSchoolId]);
 
   // Validate form data
   const validateForm = (): boolean => {
@@ -597,9 +600,13 @@ export const AttendanceConfigManager = () => {
 
     try {
       setSaving(true);
+      const payload = {
+        ...formData,
+        ...schoolScope.scopeParams,
+      };
       const response = config
-        ? await adminApi.attendance.config.update(formData)
-        : await adminApi.attendance.config.create(formData);
+        ? await adminApi.attendance.config.update(payload)
+        : await adminApi.attendance.config.create(payload);
       setConfig(response.data);
       console.log(`Config ${config ? 'updated' : 'created'}:`, response.data);
       toastSuccess('Configuration saved successfully!');
@@ -629,7 +636,7 @@ export const AttendanceConfigManager = () => {
 
     try {
       setDeleting(true);
-      await adminApi.attendance.config.delete();
+      await adminApi.attendance.config.delete(schoolScope.scopeParams);
       setConfig(null);
       setFormData({
         school_latitude: 0,
@@ -683,12 +690,17 @@ export const AttendanceConfigManager = () => {
     setQrToken(payload?.token || '');
     const expiresAt = payload?.expires_at ? String(payload.expires_at) : null;
     setQrTokenExpiresAt(expiresAt);
-    if (expiresAt) {
-      const seconds = Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000));
-      setQrExpiresInSec(seconds);
-    } else {
-      setQrExpiresInSec(0);
+  };
+
+  const getQrExpiryLabel = () => {
+    if (!qrTokenExpiresAt) {
+      return 'Valid for today';
     }
+    const expiresAt = new Date(qrTokenExpiresAt);
+    if (Number.isNaN(expiresAt.getTime())) {
+      return 'Valid for today';
+    }
+    return `Valid until ${expiresAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
   };
 
   const getQrImageUrl = (size: number, margin: number = 8) =>
@@ -727,8 +739,7 @@ export const AttendanceConfigManager = () => {
       setQrBusy(true);
       const response = await adminApi.attendance.qr.startSession({
         role_scope: qrRoleScope,
-        duration_minutes: qrDurationMinutes,
-        rotation_seconds: qrRotationSeconds,
+        ...schoolScope.scopeParams,
       });
       const data = response.data || {};
       setQrSession(data.session || null);
@@ -738,31 +749,6 @@ export const AttendanceConfigManager = () => {
       toastError(getErrorMessage(error, 'Failed to start QR session'));
     } finally {
       setQrBusy(false);
-    }
-  };
-
-  const handleRefreshQrToken = async (options?: { silent?: boolean }) => {
-    if (!qrSession?.id) {
-      return;
-    }
-
-    try {
-      setQrRefreshing(true);
-      const response = await adminApi.attendance.qr.getSessionToken(qrSession.id);
-      const data = response.data || {};
-      syncQrToken(data);
-    } catch (error: any) {
-      if (!options?.silent) {
-        toastError(getErrorMessage(error, 'Failed to refresh QR token'));
-      }
-      if (String(error?.response?.data?.error || '').toLowerCase().includes('not active')) {
-        setQrSession(null);
-        setQrToken('');
-        setQrTokenExpiresAt(null);
-        setQrExpiresInSec(0);
-      }
-    } finally {
-      setQrRefreshing(false);
     }
   };
 
@@ -776,7 +762,6 @@ export const AttendanceConfigManager = () => {
       setQrSession(null);
       setQrToken('');
       setQrTokenExpiresAt(null);
-      setQrExpiresInSec(0);
       toastSuccess('QR session closed');
     } catch (error) {
       toastError(getErrorMessage(error, 'Failed to close QR session'));
@@ -784,30 +769,6 @@ export const AttendanceConfigManager = () => {
       setQrBusy(false);
     }
   };
-
-  useEffect(() => {
-    if (!qrSession?.id) {
-      return;
-    }
-
-    const expiryTimer = window.setInterval(() => {
-      if (!qrTokenExpiresAt) {
-        return;
-      }
-      const seconds = Math.max(0, Math.floor((new Date(qrTokenExpiresAt).getTime() - Date.now()) / 1000));
-      setQrExpiresInSec(seconds);
-    }, 1000);
-
-    const refreshIntervalMs = Math.max(5000, Math.floor((qrSession.rotation_seconds || 30) * 500));
-    const refreshTimer = window.setInterval(() => {
-      handleRefreshQrToken({ silent: true });
-    }, refreshIntervalMs);
-
-    return () => {
-      window.clearInterval(expiryTimer);
-      window.clearInterval(refreshTimer);
-    };
-  }, [qrSession?.id, qrSession?.rotation_seconds, qrTokenExpiresAt]);
 
   if (loading) {
     return (
@@ -856,6 +817,7 @@ export const AttendanceConfigManager = () => {
                 </p>
               </div>
             </div>
+            <SchoolScopeSelector {...schoolScope} className="w-full lg:w-auto" />
           </div>
 
           {/* Stats Cards */}
@@ -974,10 +936,10 @@ export const AttendanceConfigManager = () => {
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-4 sm:mb-6">
               <div>
                 <h2 className={combine("text-lg sm:text-xl font-bold mb-1", get('text', 'primary'))}>
-                  Dynamic QR Attendance Session
+                  Daily QR Attendance Session
                 </h2>
                 <p className={combine("text-xs sm:text-sm", get('text', 'secondary'))}>
-                  Generate rotating QR codes for teacher/staff self-attendance check-in
+                  Generate one QR code for teacher/staff self-attendance check-in
                 </p>
               </div>
               <div className={getStatusBadgeClass(qrSession ? 'success' : 'warning')}>
@@ -987,8 +949,8 @@ export const AttendanceConfigManager = () => {
 
             <div className="grid grid-cols-1 xl:grid-cols-[1.15fr_1fr] gap-4 sm:gap-6">
               <div className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="sm:max-w-xs">
                     <label className={combine("block text-xs sm:text-sm font-medium mb-2", get('text', 'primary'))}>Role Scope</label>
                     <select
                       value={qrRoleScope}
@@ -1001,30 +963,6 @@ export const AttendanceConfigManager = () => {
                       <option value="staff">Staff Only</option>
                     </select>
                   </div>
-                  <div>
-                    <label className={combine("block text-xs sm:text-sm font-medium mb-2", get('text', 'primary'))}>Duration (min)</label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={480}
-                      value={qrDurationMinutes}
-                      onChange={(e) => setQrDurationMinutes(Math.max(1, Number(e.target.value) || 45))}
-                      className={getInputClass()}
-                      disabled={Boolean(qrSession)}
-                    />
-                  </div>
-                  <div>
-                    <label className={combine("block text-xs sm:text-sm font-medium mb-2", get('text', 'primary'))}>Rotation (sec)</label>
-                    <input
-                      type="number"
-                      min={10}
-                      max={120}
-                      value={qrRotationSeconds}
-                      onChange={(e) => setQrRotationSeconds(Math.max(10, Number(e.target.value) || 30))}
-                      className={getInputClass()}
-                      disabled={Boolean(qrSession)}
-                    />
-                  </div>
                 </div>
 
                 <div className="flex flex-wrap gap-2">
@@ -1035,14 +973,6 @@ export const AttendanceConfigManager = () => {
                   >
                     <Play className="h-4 w-4" />
                     Start QR Session
-                  </button>
-                  <button
-                    onClick={() => handleRefreshQrToken()}
-                    disabled={!qrSession || qrRefreshing}
-                    className={combine(getSecondaryButtonClass(), "flex items-center gap-2")}
-                  >
-                    <RefreshCw className={combine("h-4 w-4", qrRefreshing ? "animate-spin" : "")} />
-                    Refresh Token
                   </button>
                   <button
                     onClick={handleCloseQrSession}
@@ -1084,17 +1014,17 @@ export const AttendanceConfigManager = () => {
                   <div className="flex flex-col items-center gap-3">
                     <img
                       src={getQrImageUrl(300, 8)}
-                      alt="Dynamic attendance QR code"
+                      alt="Daily attendance QR code"
                       className="w-[240px] h-[240px] sm:w-[280px] sm:h-[280px] rounded-xl border border-gray-200 bg-white p-2"
                     />
                     <p className={combine("text-xs text-center", get('text', 'secondary'))}>
-                      Show this QR on screen. Teachers/Staff scan and submit token from their attendance pages.
+                      Show this QR on screen. Teachers/Staff scan it from their attendance pages.
                     </p>
                   </div>
                 ) : (
                   <div className="h-[260px] sm:h-[300px] flex items-center justify-center rounded-xl border border-dashed border-gray-300">
                     <p className={combine("text-sm text-center px-4", get('text', 'secondary'))}>
-                      Start a QR session to generate dynamic attendance QR code.
+                      Start a QR session to generate today's attendance QR code.
                     </p>
                   </div>
                 )}
@@ -1480,10 +1410,10 @@ export const AttendanceConfigManager = () => {
 
           <div className="flex flex-col items-center gap-4 max-w-[95vw]">
             <div className="text-center text-white">
-              <h3 className="text-lg sm:text-xl font-semibold">Dynamic Attendance QR</h3>
-              <p className="text-sm text-white/80">Token refreshes automatically</p>
+              <h3 className="text-lg sm:text-xl font-semibold">Daily Attendance QR</h3>
+              <p className="text-sm text-white/80">{getQrExpiryLabel()}</p>
               {qrSession && (
-                <p className="text-xs text-white/70 mt-1">Expires in {qrExpiresInSec}s</p>
+                <p className="text-xs text-white/70 mt-1">Session #{qrSession.id}</p>
               )}
             </div>
 

@@ -32,6 +32,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { useThemeClasses } from '@/hooks/useThemeClasses';
 import { toastSuccess, toastError, toastInfo } from '@/lib/toast';
 import { requestSidebarCountsRefresh } from '@/lib/sidebar-counts-sync';
+import { SchoolScopeSelector, useSchoolScope } from '@/components/admin/SchoolScopeSelector';
 
 interface LeaveRequest {
   id: number;
@@ -62,6 +63,7 @@ interface ActionData {
   leave_id: number;
   action: 'Approved' | 'Rejected';
   comment: string;
+  school_id?: number;
 }
 
 interface Stats {
@@ -80,6 +82,7 @@ interface FilterParams {
   role?: string;
   page?: number;
   page_size?: number;
+  school_id?: number;
 }
 
 interface PaginationMeta {
@@ -94,6 +97,7 @@ interface PaginationMeta {
 export default function LeaveManagementPage() {
   const { theme } = useTheme();
   const { get, combine } = useThemeClasses();
+  const schoolScope = useSchoolScope({ storageKey: 'operations_leave_school_scope' });
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
@@ -291,6 +295,7 @@ export default function LeaveManagementPage() {
       }
       queryParams.page = targetPage || params?.page || currentPage;
       queryParams.page_size = itemsPerPage;
+      Object.assign(queryParams, schoolScope.scopeParams);
 
       const response = await adminApi.leaves.adminActionPaginated(queryParams);
       
@@ -341,7 +346,7 @@ export default function LeaveManagementPage() {
     } finally {
       setLoading(false);
     }
-  }, [currentPage, itemsPerPage]);
+  }, [currentPage, itemsPerPage, schoolScope.selectedSchoolId]);
 
   // Calculate statistics
   const calculateStats = (leaves: LeaveRequest[]) => {
@@ -392,8 +397,12 @@ export default function LeaveManagementPage() {
 
   // Initial fetch
   useEffect(() => {
+    setCurrentPage(1);
+    setSelectedLeave(null);
+    setShowActionModal(false);
+    setAppliedFilters({ page: 1, page_size: itemsPerPage });
     fetchLeaveRequests({ page: 1, page_size: itemsPerPage }, 1);
-  }, [fetchLeaveRequests]);
+  }, [fetchLeaveRequests, itemsPerPage, schoolScope.selectedSchoolId]);
 
   // Handle filter changes with debounce
   useEffect(() => {
@@ -424,7 +433,10 @@ export default function LeaveManagementPage() {
     setActionLoading(true);
     
     try {
-      const response = await adminApi.leaves.takeAction(actionData);
+      const response = await adminApi.leaves.takeAction({
+        ...actionData,
+        ...schoolScope.scopeParams,
+      });
       
       toastSuccess(response.data?.message || `Request ${actionData.action} successfully`);
       
@@ -619,6 +631,7 @@ export default function LeaveManagementPage() {
         if (appliedFilters.search) {
           queryParams.search = appliedFilters.search;
         }
+        Object.assign(queryParams, schoolScope.scopeParams);
         if (appliedFilters.user_type) {
           queryParams.user_type = appliedFilters.user_type;
         }
@@ -729,6 +742,7 @@ export default function LeaveManagementPage() {
             </div>
 
             <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 w-full lg:w-auto">
+              <SchoolScopeSelector {...schoolScope} className="w-full sm:w-auto" />
               <button
                 onClick={exportToCSV}
                 className={combine(getSecondaryButtonClass(), "flex items-center justify-center space-x-2 w-full sm:w-auto")}

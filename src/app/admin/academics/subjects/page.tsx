@@ -50,6 +50,7 @@ import {
 import { useTheme } from '@/contexts/ThemeContext';
 import { useThemeClasses } from '@/hooks/useThemeClasses';
 import { FaSchool } from 'react-icons/fa';
+import { SchoolScopeSelector, useSchoolScope } from '@/components/admin/SchoolScopeSelector';
 
 interface Subject {
   id: number;
@@ -60,7 +61,8 @@ interface Subject {
 }
 
 interface ClassSubjects {
-  class_name: string;
+  class?: string;
+  class_name?: string;
   subject_count: number;
   subjects: Subject[];
 }
@@ -128,6 +130,7 @@ interface AllClassSubjectsResponse {
 export default function SubjectsManager() {
   const { theme } = useTheme();
   const { get, combine } = useThemeClasses();
+  const schoolScope = useSchoolScope({ storageKey: 'academics_subjects_school_scope' });
   
   const [standards, setStandards] = useState<ClassInfo[]>([]);
   const [selectedClass, setSelectedClass] = useState<string>('');
@@ -156,6 +159,11 @@ export default function SubjectsManager() {
   const [allClassSubjects, setAllClassSubjects] = useState<AllClassSubjectsResponse['classes']>([]);
 
   // Theme-aware CSS classes using the same system as allteachers and classessections
+  const getClassSortValue = (className: string) => {
+    const numeric = Number(className);
+    return Number.isFinite(numeric) ? numeric : Number.MAX_SAFE_INTEGER;
+  };
+
   const getBgClass = () => combine(
     get('bg', 'primary'),
     'min-h-screen transition-colors duration-200'
@@ -320,29 +328,32 @@ export default function SubjectsManager() {
 
   // Fetch all initial data
   useEffect(() => {
+    setSelectedClass('');
+    setClassSubjects(null);
+    setAllClassSubjects([]);
     fetchClasses();
     fetchAllClassSubjects(); // New API call
     fetchTeachers();
     fetchTeacherAllocations();
-  }, []);
+  }, [schoolScope.selectedSchoolId]);
 
   // Fetch subjects when class is selected
   useEffect(() => {
     if (selectedClass) {
       fetchClassSubjects(selectedClass);
     }
-  }, [selectedClass]);
+  }, [selectedClass, schoolScope.selectedSchoolId]);
 
   const fetchClasses = async () => {
     try {
       setLoading(prev => ({ ...prev, classes: true }));
-      const response = await adminApi.academics.standards();
+      const response = await adminApi.academics.standards(schoolScope.scopeParams);
       const data = response.data;
       setStandards(data.map((std: any) => ({ 
         id: std.id, 
         name: std.name,
         description: std.description 
-      })));
+      })).sort((a: ClassInfo, b: ClassInfo) => getClassSortValue(a.name) - getClassSortValue(b.name) || a.name.localeCompare(b.name)));
     } catch (error) {
       console.error('Error fetching classes:', error);
     } finally {
@@ -354,7 +365,7 @@ export default function SubjectsManager() {
   const fetchAllClassSubjects = async () => {
     try {
       setLoading(prev => ({ ...prev, allClassSubjects: true }));
-      const response = await adminApi.subjects.viewAll(); // Using the new endpoint
+      const response = await adminApi.subjects.viewAll(schoolScope.scopeParams); // Using the new endpoint
       const data = response.data;
       
       if (data && data.classes) {
@@ -379,7 +390,7 @@ export default function SubjectsManager() {
   const fetchClassSubjects = async (className: string) => {
     try {
       setLoading(prev => ({ ...prev, subjects: true }));
-      const response = await adminApi.subjects.viewByClass(className);
+      const response = await adminApi.subjects.viewByClass(className, schoolScope.scopeParams);
       const data = response.data;
       setClassSubjects(data);
     } catch (error) {
@@ -392,7 +403,7 @@ export default function SubjectsManager() {
   const fetchTeachers = async () => {
     try {
       setLoading(prev => ({ ...prev, teachers: true }));
-      const response = await adminApi.teachers.setupList();
+      const response = await adminApi.teachers.setupList(undefined, schoolScope.scopeParams);
       setTeachers(response.data);
     } catch (error) {
       console.error('Network error loading teachers');
@@ -404,7 +415,7 @@ export default function SubjectsManager() {
   const fetchTeacherAllocations = async () => {
     try {
       setLoading(prev => ({ ...prev, allocations: true }));
-      const response = await adminApi.teachers.allAllocations();
+      const response = await adminApi.teachers.allAllocations(schoolScope.scopeParams);
       const data = response.data;
       setTeacherAllocations(data.allocations);
       setAllocationSummary(data.summary);
@@ -456,6 +467,7 @@ export default function SubjectsManager() {
       await adminApi.subjects.assignBulk({
         class_name: selectedClass,
         subjects,
+        ...schoolScope.scopeParams,
       });
       toastSuccess(`Successfully assigned ${subjects.length} subjects to Class ${selectedClass}`);
       setSubjectsInput('');
@@ -482,6 +494,10 @@ export default function SubjectsManager() {
   }).filter(std =>
     std.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     std.description?.toLowerCase().includes(searchTerm.toLowerCase())
+  ).sort((a, b) => getClassSortValue(a.name) - getClassSortValue(b.name) || a.name.localeCompare(b.name));
+
+  const getSubjectsForClass = (className: string) => (
+    allClassSubjects.find(classData => classData.class === className)?.subjects || []
   );
 
   const getClassColor = (className: string) => {
@@ -654,6 +670,7 @@ export default function SubjectsManager() {
             </div>
             
             <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full lg:w-auto">
+              <SchoolScopeSelector {...schoolScope} className="w-full lg:w-auto" />
               <button
                 onClick={() => {
                   setIsBulkAssignOpen(true);
@@ -860,6 +877,7 @@ export default function SubjectsManager() {
                 <div className="space-y-3 sm:space-y-4">
                   {filteredClasses.map((standard) => {
                     const stats = getClassStatistics(standard.name);
+                    const subjectPreview = getSubjectsForClass(standard.name);
 
                     return (
                       <div key={standard.id} className={combine(
@@ -879,7 +897,34 @@ export default function SubjectsManager() {
                               <h4 className={combine("font-semibold text-sm sm:text-base truncate", get('text', 'primary'))}>
                                 Class {standard.name}
                               </h4>
-                              
+                              {subjectPreview.length > 0 && (
+                                <div className="mt-2 flex flex-wrap gap-1.5">
+                                  {subjectPreview.slice(0, 4).map((subject) => {
+                                    const subjectColor = getSubjectColorByName(subject.name);
+                                    return (
+                                      <span
+                                        key={subject.id}
+                                        className={combine(
+                                          "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium",
+                                          subjectColor ? '' : getStatusBadgeClass('blue')
+                                        )}
+                                        style={subjectColor ? {
+                                          backgroundColor: subjectColor.bg,
+                                          color: subjectColor.text,
+                                          border: `1px solid ${subjectColor.border}`,
+                                        } : undefined}
+                                      >
+                                        {subject.name}
+                                      </span>
+                                    );
+                                  })}
+                                  {subjectPreview.length > 4 && (
+                                    <span className={combine("inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium", getStatusBadgeClass('emerald'))}>
+                                      +{subjectPreview.length - 4} more
+                                    </span>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           </div>
 
@@ -1055,13 +1100,13 @@ export default function SubjectsManager() {
                         <div className="flex items-center gap-4">
                           <div className={combine(
                             "h-16 w-16 rounded-2xl flex items-center justify-center font-bold text-2xl",
-                            getClassColor(classSubjects.class)
+                            getClassColor(classSubjects.class || classSubjects.class_name || selectedClass)
                           )}>
-                            {classSubjects.class}
+                            {classSubjects.class || classSubjects.class_name || selectedClass}
                           </div>
                           <div>
                             <h3 className={combine("text-xl font-bold", get('text', 'primary'))}>
-                              Class {classSubjects.class_name}
+                              Class {classSubjects.class || classSubjects.class_name || selectedClass}
                             </h3>
                             <p className={combine("text-sm mt-1", get('text', 'secondary'))}>
                               {classSubjects.subject_count} subjects assigned • {classSubjects.subjects.length} active

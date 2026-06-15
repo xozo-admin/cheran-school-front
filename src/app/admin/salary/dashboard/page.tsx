@@ -5,6 +5,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { useThemeClasses } from '@/hooks/useThemeClasses';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import SalaryReportsPanel from '../reports/SalaryReportsPanel';
+import { SchoolScopeSelector, useSchoolScope } from '@/components/admin/SchoolScopeSelector';
 import { 
   FaChartLine, 
   FaRupeeSign, 
@@ -98,6 +99,7 @@ export default function SalaryDashboardPage() {
 
   const { theme } = useTheme();
   const { get, combine } = useThemeClasses();
+  const schoolScope = useSchoolScope({ storageKey: 'salary_dashboard_school_scope' });
 
   const loadData = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -106,8 +108,8 @@ export default function SalaryDashboardPage() {
     setError(null);
 
     const [cardsRes, summaryRes] = await Promise.allSettled([
-      adminApi.salary.payments.cardsOverview({ month, year }),
-      adminApi.salary.payments.summary({ month, year }),
+      adminApi.salary.payments.cardsOverview({ month, year, ...schoolScope.scopeParams }),
+      adminApi.salary.payments.summary({ month, year, ...schoolScope.scopeParams }),
     ]);
 
     let failed = false;
@@ -130,7 +132,7 @@ export default function SalaryDashboardPage() {
 
     if (isRefresh) setRefreshing(false);
     else setLoading(false);
-  }, [month, year]);
+  }, [month, year, schoolScope.selectedSchoolId]);
 
   useEffect(() => {
     loadData(false);
@@ -252,6 +254,7 @@ export default function SalaryDashboardPage() {
                   </div>
                 </div>
                 <div className='flex flex-wrap items-stretch sm:items-center gap-2 w-full md:w-auto'>
+                  <SchoolScopeSelector {...schoolScope} className="w-full sm:w-auto" />
                   <div className="flex items-center gap-2 bg-gray-50 dark:bg-gray-800/50 p-1.5 rounded-lg border border-gray-200 dark:border-gray-700 min-w-0 w-full sm:w-auto">
                     <FaCalendarAlt className={combine('text-sm ml-2', get('text', 'tertiary'))} />
                     <select 

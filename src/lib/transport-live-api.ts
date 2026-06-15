@@ -2,7 +2,7 @@ import axios from 'axios';
 import Cookies from 'js-cookie';
 import { decryptData, inspectEncryptedResponse, isEncryptedResponse } from './encryption';
 
-const DEFAULT_API_BASE = 'http://10.21.72.71:8000/api/';
+const DEFAULT_API_BASE = 'http://localhost:8000/api/';
 
 const resolveBaseUrl = (): string => {
   const envBase =
@@ -113,10 +113,10 @@ export const transportLiveApi = {
   },
   buses: {
     list: () => transportLiveClient.get('transport/transport-admin/bus-list/'),
-    active: () => transportLiveClient.get('transport/active-buses/'),
-    dateView: (busNumber: string, date: string) =>
+    active: (params?: { school_id?: number }) => transportLiveClient.get('transport/active-buses/', { params }),
+    dateView: (busNumber: string, date: string, params?: { school_id?: number }) =>
       transportLiveClient.get('transport/transport-admin/bus-date-view/', {
-        params: { bus_number: busNumber, date },
+        params: { bus_number: busNumber, date, ...(params || {}) },
       }),
   },
   routes: {

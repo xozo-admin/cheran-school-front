@@ -7,9 +7,7 @@ import {
   Users,
   GraduationCap,
   UserCheck,
-  Calendar,
   Clock,
-  BookOpen,
   TrendingUp,
   AlertCircle,
   Briefcase,
@@ -22,6 +20,10 @@ import {
   BarChart3,
   ArrowBigRight,
   Package,
+  Building2,
+  ShieldCheck,
+  RefreshCw,
+  History,
 } from 'lucide-react';
 
 import { FeeOverviewChart } from '@/components/dashboard/FeeOverviewChart';
@@ -59,6 +61,27 @@ interface DashboardStats {
     date: string;
     academic_year: string;
     generated_at: string;
+    role_scope?: 'institution' | 'school';
+    school_id?: number | null;
+    school_name?: string;
+    school_logo?: string | null;
+    institution_name?: string;
+    institution_logo?: string | null;
+    schools?: {
+      total: number;
+      active: number;
+    };
+    school_breakdown?: Array<{
+      id: number;
+      name: string;
+      code?: string | null;
+      logo?: string | null;
+      institution_name?: string | null;
+      students: number;
+      teachers: number;
+      staff: number;
+      is_active: boolean;
+    }>;
     time_periods: {
       daily: string;
       weekly: string;
@@ -133,13 +156,33 @@ interface DashboardStats {
 
 // New interface for the dashboard overview API
 interface DashboardOverview {
+  role_scope?: 'institution' | 'school';
   school_name: string;
+  school_id?: number | null;
+  school_logo?: string | null;
+  institution_name?: string;
+  institution_logo?: string | null;
+  total_schools?: number;
+  active_schools?: number;
   active_academic_year: string;
   total_students: number;
+  total_teachers?: number;
+  total_staff?: number;
   trend: string; // 'increase' or 'decrease'
   percentage_change: string;
   comparison_text: string;
   previous_year_total?: number; // Add this for comparison
+}
+
+interface DashboardSchoolOption {
+  id: number;
+  name: string;
+  code?: string | null;
+  logo?: string | null;
+  institution_name?: string | null;
+  student_count?: number;
+  teacher_count?: number;
+  staff_count?: number;
 }
 
 const StatCard = ({
@@ -203,13 +246,13 @@ const StatCard = ({
   };
 
   return (
-    <div className={`${colors[color]} p-3 sm:p-4 lg:p-5 rounded-xl border transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5 h-full min-h-[124px] sm:min-h-[138px] lg:min-h-[148px] flex flex-col justify-between`}>
+    <div className={`${colors[color]} rounded-xl border p-4 transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5 h-full min-h-[132px] sm:min-h-[144px] lg:min-h-[152px] flex flex-col justify-between`}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between gap-2 mb-2">
-            <p className="font-medium opacity-80 text-[11px] sm:text-xs lg:text-sm leading-tight break-words">{title}</p>
+          <div className="flex items-center justify-between gap-2 mb-2.5">
+            <p className="font-semibold opacity-80 text-[11px] sm:text-xs lg:text-sm leading-tight break-words uppercase tracking-wide">{title}</p>
           </div>
-          <p className={`font-bold text-lg sm:text-xl lg:text-2xl mb-1 leading-tight ${get('text', 'primary')}`}>{value}</p>
+          <p className={`font-bold text-xl sm:text-2xl mb-1 leading-tight ${get('text', 'primary')}`}>{value}</p>
           {subtitle && trend !== null && trendPosition !== 'right' ? (
             <div className="mt-2 flex items-center justify-between gap-2">
               <p className={`opacity-75 text-[11px] sm:text-xs lg:text-sm leading-tight break-words ${get('text', 'secondary')}`}>
@@ -234,8 +277,8 @@ const StatCard = ({
           )}
         </div>
         <div className="ml-1 sm:ml-2 flex flex-col items-center gap-2 shrink-0">
-          <div className={`rounded-lg p-2 sm:p-2.5 ${theme === 'dark' ? 'bg-gray-900/60 border border-gray-700/70' : 'bg-white border border-gray-100'} shadow-sm`}>
-            <Icon className="w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6" />
+          <div className={`rounded-lg p-2.5 ${theme === 'dark' ? 'bg-gray-900/60 border border-gray-700/70' : 'bg-white border border-gray-100'} shadow-sm`}>
+            <Icon className="w-5 h-5 lg:w-6 lg:h-6" />
           </div>
         </div>
       </div>
@@ -439,6 +482,8 @@ export const MainContent = () => {
   const router = useRouter();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [overview, setOverview] = useState<DashboardOverview | null>(null);
+  const [schoolOptions, setSchoolOptions] = useState<DashboardSchoolOption[]>([]);
+  const [selectedSchoolId, setSelectedSchoolId] = useState<string>('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isAttendanceChartFullScreen, setIsAttendanceChartFullScreen] = useState(false);
@@ -506,14 +551,19 @@ export const MainContent = () => {
     const fetchDashboardData = async () => {
       try {
         setLoading(true);
+        const params = selectedSchoolId !== 'all' && selectedSchoolId !== '__refresh__'
+          ? { school_id: Number(selectedSchoolId) }
+          : undefined;
 
-        const [statsResponse, overviewResponse] = await Promise.all([
-          adminApi.dashboardStats.get(),
-          adminApi.dashboard.get(),
+        const [statsResponse, overviewResponse, schoolsResponse] = await Promise.all([
+          adminApi.dashboardStats.get(params),
+          adminApi.dashboard.get(params),
+          adminApi.school.schools.list(),
         ]);
 
         const statsData = statsResponse.data;
         const overviewData = overviewResponse.data;
+        setSchoolOptions(schoolsResponse.data || schoolsResponse.data?.data || []);
 
         // ----- Trend Processing -----
         let percentValue = 0;
@@ -583,7 +633,7 @@ export const MainContent = () => {
     };
 
     fetchDashboardData();
-  }, []);
+  }, [selectedSchoolId]);
 
   // Theme-aware CSS classes using the theme system
   const getBgClass = () => combine(
@@ -745,129 +795,253 @@ export const MainContent = () => {
     : 0;
   const totalStudentsAttendance = `${presentAttendancePercentage}%`;
 
-  // Calculate year-over-year comparison
-  const previousYearTotal = overview.previous_year_total || Math.round(overview.total_students * 0.95);
-  const yearOverYearChange = ((overview.total_students - previousYearTotal) / previousYearTotal * 100).toFixed(1);
-  const isPositiveGrowth = overview.total_students >= previousYearTotal;
-
-  // Get trend display value
-  const trendDisplay = overview.percentage_change || `${isPositiveGrowth ? '+' : ''}${yearOverYearChange}%`;
-  const trendType = overview.trend || (isPositiveGrowth ? 'increase' : 'decrease');
+  const isInstitutionDashboard = stats.meta.role_scope === 'institution' || overview.role_scope === 'institution';
+  const activeSchoolCount = overview.active_schools ?? stats.meta.schools?.active ?? 0;
+  const totalSchoolCount = overview.total_schools ?? stats.meta.schools?.total ?? 0;
+  const selectedSchoolOption = schoolOptions.find((school) => String(school.id) === selectedSchoolId);
+  const dashboardTitle = 'Dashboard';
+  const dashboardSubtitle = isInstitutionDashboard
+    ? selectedSchoolId === 'all' ? 'All Schools' : selectedSchoolOption?.name || overview.school_name
+    : overview.school_name;
+  const identityLogo = (
+    isInstitutionDashboard
+      ? overview.institution_logo || stats.meta.institution_logo
+      : overview.school_logo || stats.meta.school_logo
+  ) || '/school_logo.jpeg';
+  const selectedSchoolName = selectedSchoolId === 'all'
+    ? 'All Schools'
+    : selectedSchoolOption?.name || overview.school_name;
+  const lastUpdatedLabel = stats.meta.generated_at
+    ? new Date(stats.meta.generated_at).toLocaleString([], {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      })
+    : 'Just now';
+  const refreshDashboard = () => {
+    const current = selectedSchoolId;
+    setSelectedSchoolId(current === 'all' ? '__refresh__' : 'all');
+    window.setTimeout(() => setSelectedSchoolId(current), 0);
+  };
+  const liveMessages = [
+    `${totalPresentStudents}/${totalStudents} students marked present today`,
+    `${stats.teachers.today.present} teachers checked in for ${selectedSchoolName}`,
+    `${stats.staff.today.present} staff members are active on campus`,
+    isInstitutionDashboard
+      ? `${activeSchoolCount}/${totalSchoolCount} schools are active and synced`
+      : `${selectedSchoolName} dashboard is synced`,
+  ];
 
   return (
    <div className="dashboard-typography">
-      <div className={`px-3 sm:px-4 lg:px-6 pt-3 sm:pt-4 lg:pt-6 pb-8 sm:pb-10 ${getBgClass()} transition-colors duration-200`}>
+      <div className={`px-4 sm:px-5 lg:px-8 pt-4 sm:pt-5 lg:pt-8 pb-8 sm:pb-10 ${getBgClass()} transition-colors duration-200`}>
         {/* Attractive Desktop Header - Hidden on Mobile */}
         <div className={combine(
-          'mb-4 sm:mb-6 p-3 sm:p-4 md:p-6 rounded-xl sm:rounded-2xl border shadow-lg',
+          'mb-5 p-4 sm:p-5 lg:p-6 rounded-xl sm:rounded-2xl border shadow-lg',
           theme === 'dark'
             ? 'bg-gradient-to-r from-gray-900/70 via-gray-800/70 to-indigo-900/30'
             : 'bg-gradient-to-r from-blue-50 via-white to-indigo-50',
           get('border', 'primary')
         )}>
           {/* Top Bar with Greeting and Actions */}
-          <div className="flex flex-col 2xl:flex-row justify-between items-start 2xl:items-center gap-3 sm:gap-4">
-            <div className="flex items-center gap-3">
-              <div className="relative">
+          <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-5">
+            <div className="flex min-w-0 w-full items-center gap-4">
+              <div className="relative shrink-0">
                 <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl blur-xl opacity-20"></div>
-                <div className="relative bg-gradient-to-br from-blue-600 to-indigo-600 p-2 sm:p-3 rounded-xl sm:rounded-2xl shadow-lg shadow-blue-600/25">
-                  <School className="w-5 h-5 sm:w-7 sm:h-7 text-white" />
+                <div className="relative flex h-14 w-14 items-center justify-center overflow-hidden rounded-xl border border-white/70 bg-white shadow-lg shadow-blue-600/15 sm:h-16 sm:w-16 lg:h-[72px] lg:w-[72px]">
+                  <img
+                    src={identityLogo}
+                    alt={`${dashboardSubtitle} logo`}
+                    className="h-full w-full object-contain p-1"
+                    onError={(event) => {
+                      event.currentTarget.src = '/school_logo.jpeg';
+                    }}
+                  />
                 </div>
               </div>
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <h1 className={`text-lg sm:text-2xl lg:text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 dark:from-white dark:to-gray-300 bg-clip-text text-transparent`}>
-                    Welcome back, Admin
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 mb-2">
+                  <h1 className={`truncate text-2xl sm:text-3xl lg:text-4xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 dark:from-white dark:to-gray-300 bg-clip-text text-transparent`}>
+                    {dashboardTitle}
                   </h1>
                   <Sparkles className="hidden sm:block w-5 h-5 text-yellow-500 animate-pulse" />
                 </div>
-                <div className="flex items-center gap-2 text-xs sm:text-sm">
-                  <div className={`flex items-center gap-2 px-2 sm:px-3 py-1 sm:py-1.5 ${theme === 'dark' ? 'bg-gray-800/50' : 'bg-white/50'} backdrop-blur-sm rounded-full border ${get('border', 'primary')}`}>
-                    <School className="w-4 h-4 text-blue-600" />
-                    <span className={`font-medium ${get('text', 'primary')} max-w-[180px] sm:max-w-none truncate`}>{overview.school_name}</span>
+                <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm">
+                  <div className={`flex min-w-0 items-center gap-2 px-3 py-1.5 ${theme === 'dark' ? 'bg-gray-800/50' : 'bg-white/60'} backdrop-blur-sm rounded-full border ${get('border', 'primary')}`}>
+                    {isInstitutionDashboard ? (
+                      <Building2 className="w-4 h-4 text-blue-600" />
+                    ) : (
+                      <School className="w-4 h-4 text-blue-600" />
+                    )}
+                    <span className={`font-medium ${get('text', 'primary')} max-w-[180px] sm:max-w-none truncate`}>{dashboardSubtitle}</span>
+                  </div>
+                  <div className={`hidden sm:flex items-center gap-2 px-3 py-1.5 ${theme === 'dark' ? 'bg-gray-800/50' : 'bg-white/50'} backdrop-blur-sm rounded-full border ${get('border', 'primary')}`}>
+                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                    <span className={`font-medium ${get('text', 'primary')}`}>
+                      {isInstitutionDashboard ? `${activeSchoolCount}/${totalSchoolCount} active schools` : 'School scoped'}
+                    </span>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Year-over-Year Comparison Card */}
-            <div className='flex items-center gap-2 flex-wrap'>
-              <div className={`flex items-center gap-2 px-2 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm ${theme === 'dark' ? 'bg-gray-800/50' : 'bg-white/50'} backdrop-blur-sm rounded-full border ${get('border', 'primary')}`}>
-                <GraduationCap className="w-4 h-4 text-purple-600" />
-                <span className={`font-medium ${get('text', 'primary')}`}>AY {stats?.meta?.academic_year || 'N/A'}</span>
-              </div>
-              <div className={`flex items-center gap-2 px-2 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm ${theme === 'dark' ? 'bg-gray-800/50' : 'bg-white/50'} backdrop-blur-sm rounded-full border ${get('border', 'primary')}`}>
-                <Calendar className="w-4 h-4 text-green-600" />
-                <span className={`font-medium ${get('text', 'primary')}`}>{stats.meta.time_periods.daily}</span>
+            <div className='flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap xl:w-auto xl:items-center xl:justify-end'>
+              <button
+                type="button"
+                onClick={refreshDashboard}
+                disabled={loading}
+                className={`flex h-10 items-center justify-center gap-2 rounded-full border px-4 text-xs font-semibold transition sm:text-sm ${theme === 'dark' ? 'border-gray-700 bg-gray-800/50 text-gray-100 hover:bg-gray-700' : 'border-white/70 bg-white/75 text-slate-700 hover:bg-white'}`}
+              >
+                <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
+              <div className={`flex min-h-10 items-center gap-2 rounded-full border px-4 text-xs sm:text-sm ${theme === 'dark' ? 'bg-gray-800/50' : 'bg-white/75'} backdrop-blur-sm ${get('border', 'primary')}`}>
+                <Clock className="w-4 h-4 text-green-600" />
+                <span className={`font-medium ${get('text', 'primary')}`}>Updated {lastUpdatedLabel}</span>
               </div>
             </div>
           </div>
 
         </div>
 
-       
-        <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-5 gap-4 sm:gap-6 mb-3 sm:mb-4">
-          <div className="2xl:col-span-1">
-            <StatCard
-              title="Total Students"
-              value={overview.total_students}
-              icon={Users}
-              color="blue"
-              subtitle={overview.comparison_text}
-              trend={trendDisplay}
-              trendType={trendType as 'increase' | 'decrease' | 'neutral'}
-              trendPosition="right"
-            />
+        <div className="mb-6 grid grid-cols-1 gap-5 2xl:grid-cols-[minmax(0,1fr)_380px]">
+          <div className="min-w-0 space-y-5">
+            <div className={combine('grid grid-cols-1 gap-4 sm:grid-cols-2', isInstitutionDashboard ? 'xl:grid-cols-3' : 'xl:grid-cols-2')}>
+              {isInstitutionDashboard && (
+                <div className={combine('rounded-xl border p-5 shadow-sm transition hover:shadow-md', theme === 'dark' ? 'bg-gray-900/70' : 'bg-white', get('border', 'primary'))}>
+                  <div className="flex min-h-[92px] items-center justify-between gap-3">
+                    <div>
+                      <p className={`text-xs font-semibold uppercase ${get('text', 'tertiary')}`}>Schools</p>
+                      <p className={`mt-1 text-2xl font-bold ${get('text', 'primary')}`}>{activeSchoolCount}/{totalSchoolCount}</p>
+                      <p className={`mt-1 text-xs ${get('text', 'secondary')}`}>Active campuses</p>
+                    </div>
+                    <Building2 className="h-7 w-7 shrink-0 text-blue-700" />
+                  </div>
+                </div>
+              )}
+              <div className={combine('rounded-xl border p-5 shadow-sm transition hover:shadow-md', theme === 'dark' ? 'bg-gray-900/70' : 'bg-white', get('border', 'primary'))}>
+                <div className="flex min-h-[92px] items-center justify-between gap-3">
+                  <div>
+                    <p className={`text-xs font-semibold uppercase ${get('text', 'tertiary')}`}>{isInstitutionDashboard ? 'Students' : 'School Students'}</p>
+                    <p className={`mt-1 text-2xl font-bold ${get('text', 'primary')}`}>{overview.total_students}</p>
+                    <p className={`mt-1 text-xs ${get('text', 'secondary')}`}>{overview.comparison_text}</p>
+                  </div>
+                  <Users className="h-7 w-7 shrink-0 text-blue-700" />
+                </div>
+              </div>
+              <div className={combine('rounded-xl border p-5 shadow-sm transition hover:shadow-md', theme === 'dark' ? 'bg-gray-900/70' : 'bg-white', get('border', 'primary'))}>
+                <div className="flex min-h-[92px] items-center justify-between gap-3">
+                  <div>
+                    <p className={`text-xs font-semibold uppercase ${get('text', 'tertiary')}`}>Academic Year</p>
+                    <p className={`mt-1 text-xl font-bold ${get('text', 'primary')}`}>{stats?.meta?.academic_year || 'N/A'}</p>
+                    <p className={`mt-1 text-xs ${get('text', 'secondary')}`}>{stats.meta.time_periods.daily}</p>
+                  </div>
+                  <GraduationCap className="h-7 w-7 shrink-0 text-purple-700" />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <h2 className={`text-xl font-bold sm:text-2xl ${get('text', 'primary')}`}>Attendance</h2>
+                <p className={`mt-1 text-xs sm:text-sm ${get('text', 'secondary')}`}>Daily presence and academic readiness for {selectedSchoolName}</p>
+              </div>
+              <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto lg:items-center lg:justify-end">
+                {schoolOptions.length > 1 && (
+                  <label className={`flex min-h-11 w-full items-center gap-2 rounded-xl border px-3 py-2 shadow-sm sm:min-w-[260px] lg:w-[320px] ${theme === 'dark' ? 'border-gray-700 bg-gray-900 text-gray-100' : 'border-slate-200 bg-white text-slate-700'}`}>
+                    <School className="h-4 w-4 shrink-0 text-blue-600" />
+                    <select
+                      value={selectedSchoolId === '__refresh__' ? 'all' : selectedSchoolId}
+                      onChange={(event) => setSelectedSchoolId(event.target.value)}
+                      className={`w-full bg-transparent text-sm font-medium outline-none ${get('text', 'primary')}`}
+                    >
+                      <option value="all">All Schools</option>
+                      {schoolOptions.map((school) => (
+                        <option key={school.id} value={school.id}>
+                          {school.name}{school.code ? ` (${school.code})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <button
+                  type="button"
+                  onClick={() => router.push('/admin/students/attendance')}
+                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border shadow-sm transition ${theme === 'dark' ? 'border-gray-700 bg-gray-900 text-gray-100 hover:bg-gray-800' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
+                  title="Attendance history"
+                  aria-label="Attendance history"
+                >
+                  <History className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3 sm:gap-5 lg:gap-6">
+              <div className="2xl:col-span-1">
+                <StatCard
+                  title="Students"
+                  value={totalStudentsAttendance}
+                  icon={UserCheck}
+                  color={presentAttendancePercentage >= 80 ? 'green' : 'orange'}
+                  subtitle={`${totalPresentStudents}/${totalStudents} present today`}
+                />
+              </div>
+
+              <div className={isInstitutionDashboard ? "2xl:col-span-1" : "2xl:col-span-1"}>
+                <StatCard
+                  title="Teachers"
+                  value={stats.teachers.total}
+                  icon={GraduationCap}
+                  color="purple"
+                  subtitle={`${stats.teachers.today.present} present today`}
+                />
+              </div>
+
+              <div className="2xl:col-span-1">
+                <StatCard
+                  title="Staff"
+                  value={stats.staff.total}
+                  icon={Briefcase}
+                  color="indigo"
+                  subtitle={`${stats.staff.today.present} present today`}
+                />
+              </div>
+            </div>
           </div>
 
-          <div className="2xl:col-span-1">
-            <StatCard
-              title="Student Attendance"
-              value={totalStudentsAttendance}
-              icon={UserCheck}
-              color={presentAttendancePercentage >= 80 ? 'green' : 'orange'}
-              subtitle={`${totalPresentStudents}/${totalStudents} present today`}
-            />
-          </div>
+          <aside className={combine('relative h-full min-h-[340px] overflow-hidden rounded-xl border p-4 shadow-sm transition hover:shadow-md 2xl:min-h-0', theme === 'dark' ? 'bg-gray-900/80' : 'bg-white', get('border', 'primary'))}>
+            <div className="absolute left-4 top-4 z-10 flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 shadow-sm dark:border-emerald-800/70 dark:bg-emerald-950/50 dark:text-emerald-300">
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+              </span>
+              Synced
+            </div>
 
-          <div className="2xl:col-span-1">
-            <StatCard
-              title="Teachers"
-              value={stats.teachers.total}
-              icon={GraduationCap}
-              color="purple"
-              subtitle={`${stats.teachers.today.present} present today`}
-            />
-          </div>
+            <div className="pointer-events-none absolute inset-0 opacity-70">
+              <div className={`absolute left-8 top-16 h-20 w-20 rounded-full blur-2xl ${theme === 'dark' ? 'bg-emerald-900/30' : 'bg-emerald-100'}`} />
+              <div className={`absolute bottom-8 right-8 h-24 w-24 rounded-full blur-2xl ${theme === 'dark' ? 'bg-blue-900/30' : 'bg-blue-100'}`} />
+            </div>
 
-          <div className="2xl:col-span-1">
-            <StatCard
-              title="Staff"
-              value={stats.staff.total}
-              icon={Briefcase}
-              color="indigo"
-              subtitle={`${stats.staff.today.present} present today`}
-            />
-          </div>
-
-          <div className="sm:col-span-2 2xl:col-span-1">
-            <StatCard
-              title="Classes & Sections"
-              value={
-                <>
-                  <span className="block py-1">{stats.academics.total_classes} Classes</span>
-                  <span className="block">{stats.academics.total_sections} Sections</span>
-                </>
-              }
-              icon={BookOpen}
-              color="orange"
-              subtitle={
-                <span className="text-orange-600 dark:text-orange-400">
-                  {stats.academics.inactive.classes} Inactive Classes
-                </span>
-              }
-            />
-          </div>
+            <div className="relative h-full min-h-[300px] overflow-hidden rounded-lg">
+              {liveMessages.map((message, index) => (
+                <div
+                  key={message}
+                  className={combine(
+                    'dashboard-slide-message absolute left-0 top-0 max-w-[92%] whitespace-nowrap rounded-full border px-4 py-2 text-xs font-semibold shadow-sm sm:text-sm',
+                    theme === 'dark'
+                      ? 'border-gray-700 bg-gray-950/85 text-gray-100'
+                      : 'border-slate-200 bg-white/95 text-slate-800'
+                  )}
+                  style={{
+                    animationDelay: `${index * 2.2}s`,
+                    animationDuration: `${9.5 + index * 0.6}s`,
+                  }}
+                >
+                  {message}
+                </div>
+              ))}
+            </div>
+          </aside>
         </div>
 
         <div className="block">
@@ -898,36 +1072,6 @@ export const MainContent = () => {
                   />
                 </div>
               </div>
-
-              <div className="mt-4 sm:mt-6">
-                <div className={getCardGradientClass('purple')}>
-                  <div className="flex justify-between items-center mb-3 sm:mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className={`p-1.5 sm:p-2 bg-gradient-to-br ${theme === 'dark' ? 'from-purple-900/30 to-purple-800/30' : 'from-purple-50 to-purple-100'} rounded-lg`}>
-                        <Activity className={`${theme === 'dark' ? 'text-purple-400' : 'text-purple-600'} w-4 h-4 sm:w-5 sm:h-5`} />
-                      </div>
-                      <div>
-                        <h3 className={`text-sm sm:text-base font-semibold ${get('text', 'primary')}`}>Recent Activities</h3>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => setIsActivitiesFullScreen(true)}
-                        className={`flex items-center gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm ${theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} rounded-lg transition-colors ${get('text', 'secondary')}`}
-                        title="View activities in full screen mode"
-                      >
-                        <FaExpand className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${get('icon', 'secondary')}`} />
-                      </button>
-                    </div>
-                  </div>
-                  <RecentActivities
-                    isFullScreen={isActivitiesFullScreen}
-                    onCloseFullScreen={() => setIsActivitiesFullScreen(false)}
-                  />
-                </div>
-              </div>
-
-
 
               <div className="mt-4 sm:mt-6">
                 <div className={getCardGradientClass('orange')}>
@@ -963,6 +1107,35 @@ export const MainContent = () => {
 
             {/* Right Column - Charts and Additional Data */}
             <div className="2xl:col-span-2 space-y-4 sm:space-y-6">
+              <div className={combine(getCardGradientClass('purple'), 'flex min-h-[360px] flex-col p-4 sm:p-5 lg:min-h-[400px]')}>
+                <div className="mb-3 flex items-center justify-between gap-3 sm:mb-4">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className={`shrink-0 rounded-lg bg-gradient-to-br p-1.5 sm:p-2 ${theme === 'dark' ? 'from-purple-900/30 to-purple-800/30' : 'from-purple-50 to-purple-100'}`}>
+                      <Activity className={`${theme === 'dark' ? 'text-purple-400' : 'text-purple-600'} h-4 w-4 sm:h-5 sm:w-5`} />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className={`truncate text-sm font-semibold sm:text-base ${get('text', 'primary')}`}>Recent Activities</h3>
+                      <p className={`mt-0.5 text-xs ${get('text', 'tertiary')}`}>Today</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setIsActivitiesFullScreen(true)}
+                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors sm:h-10 sm:w-10 ${theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'} ${get('text', 'secondary')}`}
+                    title="View activities in full screen mode"
+                    aria-label="View activities in full screen mode"
+                  >
+                    <FaExpand className={`h-3.5 w-3.5 sm:h-4 sm:w-4 ${get('icon', 'secondary')}`} />
+                  </button>
+                </div>
+                <div className="min-h-0 flex-1">
+                  <RecentActivities
+                    compact
+                    isFullScreen={isActivitiesFullScreen}
+                    onCloseFullScreen={() => setIsActivitiesFullScreen(false)}
+                  />
+                </div>
+              </div>
+
               {/* Attendance Overview Chart with Full Screen Button */}
               <div className={combine(getCardGradientClass('indigo'), 'w-full min-h-[380px] sm:min-h-[460px] lg:min-h-[500px] xl:min-h-[560px]')}>
                 <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
@@ -1219,6 +1392,34 @@ export const MainContent = () => {
           </div>
         </div>
       </FullScreenChartModal>
+      <style jsx>{`
+        .dashboard-slide-message {
+          animation-name: dashboard-slide-message;
+          animation-timing-function: linear;
+          animation-iteration-count: infinite;
+          opacity: 0;
+          left: 50%;
+          transform: translate(-50%, -120%);
+          will-change: transform, opacity;
+        }
+
+        @keyframes dashboard-slide-message {
+          0% {
+            opacity: 0;
+            transform: translate(-50%, -120%);
+          }
+          10% {
+            opacity: 1;
+          }
+          78% {
+            opacity: 1;
+          }
+          100% {
+            opacity: 0;
+            transform: translate(-50%, 285px);
+          }
+        }
+      `}</style>
       <CsvUploadFloating />
     </div>
   );

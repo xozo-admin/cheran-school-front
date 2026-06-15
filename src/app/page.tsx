@@ -95,15 +95,7 @@ export default function Home() {
                         </div>
 
                         <LoginForm onSubmit={handleLoginSubmit} />
-                        <div className="mt-4 text-center">
-                          <Link
-                            href="/institutions"
-                            className="text-sm font-medium hover:underline"
-                            style={{ color: '#2563eb' }}
-                          >
-                            Institution-level login (mock dashboard)
-                          </Link>
-                        </div>
+                        
 
                         <div className="hidden sm:block mt-8 pt-6 border-t border-gray-300">
                           <div className="text-center">

@@ -22,6 +22,7 @@ import {
 import { useTheme } from '@/contexts/ThemeContext';
 import { useThemeClasses } from '@/hooks/useThemeClasses';
 import { toastSuccess, toastError } from '@/lib/toast';
+import { SchoolScopeSelector, useSchoolScope } from '@/components/admin/SchoolScopeSelector';
 
 interface Holiday {
     id: number;
@@ -62,11 +63,13 @@ interface HolidayFilterParams {
     applicable_for?: string;
     page?: number;
     page_size?: number;
+    school_id?: number;
 }
 
 export default function HolidaysManagementPage() {
     const { theme } = useTheme();
     const { get, combine } = useThemeClasses();
+    const schoolScope = useSchoolScope({ storageKey: 'operations_holidays_school_scope' });
 
     // State management
     const [holidays, setHolidays] = useState<Holiday[]>([]);
@@ -205,6 +208,7 @@ const handleDeleteClick = (holidayId: number) => {
             const queryParams: HolidayFilterParams = {
                 page: targetPage || params?.page || 1,
                 page_size: itemsPerPage,
+                ...schoolScope.scopeParams,
             };
             if (params?.search) queryParams.search = params.search;
             if (params?.year) queryParams.year = params.year;
@@ -242,7 +246,7 @@ const handleDeleteClick = (holidayId: number) => {
         } finally {
             setLoading(false);
         }
-    }, [itemsPerPage]);
+    }, [itemsPerPage, schoolScope.selectedSchoolId]);
 
     const createHoliday = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -250,7 +254,10 @@ const handleDeleteClick = (holidayId: number) => {
 
         try {
 
-            const response = await adminApi.holidays.create(formData);
+            const response = await adminApi.holidays.create({
+                ...formData,
+                ...schoolScope.scopeParams,
+            });
             const data = response.data;
 
             if (data.status === 200) {
@@ -279,7 +286,8 @@ const handleDeleteClick = (holidayId: number) => {
 
             const payload = {
                 holiday_id: editingHoliday.id,
-                ...formData
+                ...formData,
+                ...schoolScope.scopeParams,
             };
 
             const response = await adminApi.holidays.update(payload);
@@ -307,7 +315,7 @@ const handleDeleteClick = (holidayId: number) => {
   
   setDeleting(true);
   try {
-    const response = await adminApi.holidays.delete(itemToDelete);
+    const response = await adminApi.holidays.delete(itemToDelete, schoolScope.scopeParams);
     const data = response.data;
 
     if (data.status === 200) {
@@ -402,8 +410,12 @@ const handleDeleteClick = (holidayId: number) => {
     }, [searchTerm, filterYear, filterMonth, filterApplicableFor, fetchHolidays, itemsPerPage]);
 
     useEffect(() => {
+        setCurrentPage(1);
+        setShowForm(false);
+        setEditingHoliday(null);
+        setShowDeleteConfirm(false);
         fetchHolidays({ page: 1, page_size: itemsPerPage }, 1);
-    }, [fetchHolidays, itemsPerPage]);
+    }, [fetchHolidays, itemsPerPage, schoolScope.selectedSchoolId]);
 
     useEffect(() => {
         const timer = setTimeout(() => {
@@ -471,6 +483,7 @@ const handleDeleteClick = (holidayId: number) => {
                 const queryParams: HolidayFilterParams = {
                     page,
                     page_size: exportPageSize,
+                    ...schoolScope.scopeParams,
                 };
 
                 if (searchTerm.trim()) queryParams.search = searchTerm.trim();
@@ -548,6 +561,7 @@ const handleDeleteClick = (holidayId: number) => {
 
                         {!showForm && (
                             <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 w-full sm:w-auto">
+                                <SchoolScopeSelector {...schoolScope} className="w-full sm:w-auto" />
                                 <button
                                     onClick={exportToCSV}
                                     className={combine(getSecondaryButtonClass(), "flex items-center justify-center space-x-2 w-full sm:w-auto")}

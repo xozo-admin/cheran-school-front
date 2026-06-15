@@ -35,11 +35,16 @@ import {
   Settings,
   Grid,
   List,
-  ChevronUp
+  ChevronUp,
+  FileDown,
+  Printer
 } from 'lucide-react';
 import { FaSchool } from 'react-icons/fa';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useThemeClasses } from '@/hooks/useThemeClasses';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { SchoolScopeSelector, useSchoolScope } from '@/components/admin/SchoolScopeSelector';
 
 interface Period {
   period_no: number;
@@ -127,6 +132,7 @@ interface SubstitutionTeacher {
 export default function TimetableManager() {
   const { theme } = useTheme();
   const { get, combine } = useThemeClasses();
+  const schoolScope = useSchoolScope({ storageKey: 'academics_timetable_school_scope' });
 
   const [standards, setStandards] = useState<Standard[]>([]);
   const [selectedClass, setSelectedClass] = useState<string>('');
@@ -231,7 +237,7 @@ export default function TimetableManager() {
 
   const fetchTeacherSubjectAllocations = async () => {
     try {
-      const response = await adminApi.teachers.allAllocations();
+      const response = await adminApi.teachers.allAllocations(schoolScope.scopeParams);
       console.log('Teacher Allocations Response:', response.data);
       if (response.data && response.data.allocations && Array.isArray(response.data.allocations)) {
         setTeacherAllocationData(response.data.allocations);
@@ -516,10 +522,16 @@ export default function TimetableManager() {
   });
 
   useEffect(() => {
+    setSelectedClass('');
+    setSelectedSection('');
+    setSections([]);
+    setSubjects([]);
+    setTimetable({});
+    setBreaks([]);
     fetchClasses();
     fetchTeachers();
     fetchTeacherSubjectAllocations(); // Add this
-  }, []);
+  }, [schoolScope.selectedSchoolId]);
 
   useEffect(() => {
     if (!selectedClass) {
@@ -835,7 +847,7 @@ export default function TimetableManager() {
   const fetchClasses = async () => {
     try {
       setLoading(prev => ({ ...prev, classes: true }));
-      const response = await adminApi.academics.standards();
+      const response = await adminApi.academics.standards(schoolScope.scopeParams);
       setStandards(response.data);
     } catch (error) {
       console.error('Failed to fetch classes:', error);
@@ -855,7 +867,7 @@ export default function TimetableManager() {
         return;
       }
 
-      const response = await adminApi.academics.sections(String(standard.id));
+      const response = await adminApi.academics.sections(String(standard.id), schoolScope.scopeParams);
       if (response.status >= 200 && response.status < 300) {
         setSections(response.data);
       } else {
@@ -884,7 +896,7 @@ export default function TimetableManager() {
   const fetchClassSubjects = async (className: string) => {
     try {
       setLoading(prev => ({ ...prev, subjects: true }));
-      const response = await adminApi.subjects.viewByClass(className);
+      const response = await adminApi.subjects.viewByClass(className, schoolScope.scopeParams);
       const data = response.data;
       setSubjects(data.subjects || []);
     } catch (error) {
@@ -897,7 +909,7 @@ export default function TimetableManager() {
   const fetchTeachers = async () => {
     try {
       setLoading(prev => ({ ...prev, teachers: true }));
-      const response = await adminApi.teachers.setupList(true);
+      const response = await adminApi.teachers.setupList(true, schoolScope.scopeParams);
       setTeachers(response.data);
     } catch (error) {
       console.error('Failed to fetch teachers');
@@ -909,7 +921,7 @@ export default function TimetableManager() {
   const fetchBreaks = async (className: string) => {
     try {
       setLoading(prev => ({ ...prev, breaks: true }));
-      const response = await adminApi.timetable.getBreaks(className);
+      const response = await adminApi.timetable.getBreaks(className, schoolScope.scopeParams);
       setBreaks(response.data || []);
     } catch (error) {
       console.error('Failed to fetch breaks:', error);
@@ -928,7 +940,8 @@ export default function TimetableManager() {
       // Create params object properly
       const params = {
         class: selectedClass,
-        section: selectedSection
+        section: selectedSection,
+        ...schoolScope.scopeParams,
       };
 
       // Only add day if it's not 'All'
@@ -1276,6 +1289,7 @@ export default function TimetableManager() {
       class_name: selectedClass,
       section: selectedSection,
       day: selectedDay,
+      ...schoolScope.scopeParams,
       timetable: nonEmptyPeriods.map(period => ({
         period_no: period.period_no,
         start_time: period.start_time,
@@ -1460,7 +1474,10 @@ export default function TimetableManager() {
         payload.section_subject_teachers = sectionSubjectTeachers;
       }
 
-      const response = await adminApi.timetable.autoGenerate(payload);
+      const response = await adminApi.timetable.autoGenerate({
+        ...payload,
+        ...schoolScope.scopeParams,
+      });
 
       toastSuccess(
         response.data?.message ||
@@ -1536,6 +1553,7 @@ export default function TimetableManager() {
       class_name: selectedClass,
       section: selectedSection,
       day: selectedDay,
+      ...schoolScope.scopeParams,
       timetable: nonEmptyPeriods.map(period => ({
         period_no: period.period_no,
         start_time: period.start_time,
@@ -1575,7 +1593,8 @@ export default function TimetableManager() {
       try {
         const params: any = {
           class: selectedClass,
-          section: selectedSection
+          section: selectedSection,
+          ...schoolScope.scopeParams,
         };
 
         if (day) params.day = day;
@@ -1610,6 +1629,7 @@ export default function TimetableManager() {
     try {
       const response = await adminApi.timetable.createBreak({
         class_name: selectedClass,
+        ...schoolScope.scopeParams,
         ...newBreak
       });
       toastSuccess(response.data.message || 'Break added successfully');
@@ -1630,7 +1650,8 @@ export default function TimetableManager() {
         class_name: selectedClass,
         name: editingBreak.name,
         start_time: editingBreak.start_time,
-        end_time: editingBreak.end_time
+        end_time: editingBreak.end_time,
+        ...schoolScope.scopeParams,
       });
       toastSuccess(response.data.message || 'Break updated successfully');
       setShowBreakModal(false);
@@ -1647,7 +1668,7 @@ export default function TimetableManager() {
       'Are you sure you want to delete this break? This action cannot be undone.',
       async () => {
         try {
-          const response = await adminApi.timetable.deleteBreak(id);
+          const response = await adminApi.timetable.deleteBreak(id, schoolScope.scopeParams);
           toastSuccess(response.data.message || 'Break deleted successfully');
           fetchBreaks(selectedClass);
         } catch (error: any) {
@@ -1659,6 +1680,182 @@ export default function TimetableManager() {
 
   const formatTimeForDisplay = (time: string) => {
     return time.substring(0, 5); // Convert "08:00:00" to "08:00"
+  };
+
+  const formatTeacherForExport = (teacherName?: string) => {
+    const cleaned = (teacherName || '').trim();
+    if (!cleaned) return 'Teacher not assigned';
+    if (cleaned.toLowerCase() === 'no teacher') return 'Teacher not assigned';
+
+    return cleaned
+      .replace(/\s*\((?:TCH|TEA|TR)[A-Z0-9_-]*\)\s*$/i, '')
+      .replace(/\s*-\s*(?:TCH|TEA|TR)[A-Z0-9_-]*\s*$/i, '')
+      .trim() || 'Teacher not assigned';
+  };
+
+  const getSortedTimetableSlots = () => {
+    const slots = new Map<string, { start: string; end: string }>();
+
+    days.forEach(day => {
+      (timetable[day] || []).forEach(item => {
+        const [start = '', end = ''] = item.time.split(' - ');
+        const startLabel = formatTimeForDisplay(start);
+        const endLabel = formatTimeForDisplay(end);
+        const key = `${startLabel}-${endLabel}`;
+
+        if (startLabel && endLabel && !slots.has(key)) {
+          slots.set(key, { start: startLabel, end: endLabel });
+        }
+      });
+    });
+
+    return Array.from(slots.entries())
+      .sort((a, b) => {
+        const timeA = new Date(`1970-01-01T${a[1].start}`).getTime();
+        const timeB = new Date(`1970-01-01T${b[1].start}`).getTime();
+        return timeA - timeB;
+      });
+  };
+
+  const handleExportTimetablePdf = (shouldPrint = false) => {
+    if (!selectedClass || !selectedSection) {
+      toastInfo('Select class and section before exporting timetable');
+      return;
+    }
+
+    const exportDays = selectedDay === 'All'
+      ? days.filter(day => (timetable[day] || []).length > 0)
+      : [selectedDay].filter(day => (timetable[day] || []).length > 0);
+
+    if (exportDays.length === 0) {
+      toastWarning('No timetable data available to export');
+      return;
+    }
+
+    try {
+      const doc = new jsPDF({
+        orientation: selectedDay === 'All' ? 'landscape' : 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const title = selectedDay === 'All' ? 'Weekly Timetable' : `${selectedDay} Timetable`;
+      const subtitle = `Class ${selectedClass} - Section ${selectedSection}`;
+      const generatedAt = `Generated on ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+
+      doc.setFillColor(37, 99, 235);
+      doc.rect(0, 0, pageWidth, 24, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.text(title, 14, 10);
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(subtitle, 14, 17);
+      doc.text(generatedAt, pageWidth - 14, 17, { align: 'right' });
+
+      if (selectedDay === 'All') {
+        const slots = getSortedTimetableSlots();
+        const body = exportDays.map(day => {
+          const periodMap = new Map<string, TimetableDay[string][number]>();
+          (timetable[day] || []).forEach(item => {
+            const [start = '', end = ''] = item.time.split(' - ');
+            periodMap.set(`${formatTimeForDisplay(start)}-${formatTimeForDisplay(end)}`, item);
+          });
+
+          return [
+            day,
+            ...slots.map(([key]) => {
+              const period = periodMap.get(key);
+              if (!period) return '-';
+              if (period.is_break) return `${period.subject}\nBreak`;
+              return `${period.subject}\n${formatTeacherForExport(period.teacher)}`;
+            })
+          ];
+        });
+
+        autoTable(doc, {
+          head: [['Day', ...slots.map(([, slot]) => `${slot.start} - ${slot.end}`)]],
+          body,
+          startY: 32,
+          styles: {
+            fontSize: slots.length > 7 ? 7 : 8,
+            cellPadding: 2.2,
+            valign: 'middle',
+            overflow: 'linebreak',
+            lineColor: [226, 232, 240],
+            lineWidth: 0.15
+          },
+          headStyles: {
+            fillColor: [30, 64, 175],
+            textColor: [255, 255, 255],
+            fontStyle: 'bold'
+          },
+          alternateRowStyles: { fillColor: [248, 250, 252] },
+          columnStyles: {
+            0: { fontStyle: 'bold', cellWidth: 24, fillColor: [239, 246, 255] }
+          },
+          didParseCell: (data) => {
+            if (data.section === 'body' && data.column.index > 0 && String(data.cell.raw).includes('Break')) {
+              data.cell.styles.fillColor = [255, 251, 235];
+              data.cell.styles.textColor = [146, 64, 14];
+              data.cell.styles.fontStyle = 'bold';
+            }
+          }
+        });
+      } else {
+        const body = (timetable[selectedDay] || []).map(period => [
+          period.is_break ? 'Break' : `Period ${period.period}`,
+          period.time.split(' - ').map(formatTimeForDisplay).join(' - '),
+          period.subject,
+          period.is_break ? 'Break' : formatTeacherForExport(period.teacher),
+          period.is_break ? 'Break' : [
+            period.is_combined_class ? 'Combined Class' : '',
+            period.is_substitution ? 'Substitution' : ''
+          ].filter(Boolean).join(', ') || 'Regular'
+        ]);
+
+        autoTable(doc, {
+          head: [['Period', 'Time', 'Subject', 'Teacher', 'Type']],
+          body,
+          startY: 32,
+          styles: {
+            fontSize: 9,
+            cellPadding: 3,
+            valign: 'middle',
+            lineColor: [226, 232, 240],
+            lineWidth: 0.15
+          },
+          headStyles: {
+            fillColor: [30, 64, 175],
+            textColor: [255, 255, 255],
+            fontStyle: 'bold'
+          },
+          alternateRowStyles: { fillColor: [248, 250, 252] },
+          didParseCell: (data) => {
+            if (data.section === 'body' && String(data.row.raw).includes('Break')) {
+              data.cell.styles.fillColor = [255, 251, 235];
+              data.cell.styles.textColor = [146, 64, 14];
+              data.cell.styles.fontStyle = 'bold';
+            }
+          }
+        });
+      }
+
+      const safeName = `Class_${selectedClass}_Section_${selectedSection}_${selectedDay}_Timetable`.replace(/[^a-z0-9_-]+/gi, '_');
+      if (shouldPrint) {
+        doc.autoPrint();
+        window.open(doc.output('bloburl'), '_blank');
+        toastSuccess('Timetable PDF opened for printing');
+        return;
+      }
+
+      doc.save(`${safeName}.pdf`);
+      toastSuccess('Timetable PDF downloaded successfully');
+    } catch (error) {
+      console.error('Timetable PDF export error:', error);
+      toastError('Failed to export timetable PDF');
+    }
   };
 
   const openSubstitutionModal = () => {
@@ -1692,7 +1889,8 @@ export default function TimetableManager() {
         date: substitutionForm.date,
         period: substitutionForm.period_no,
         class_name: selectedClass,
-        section: selectedSection
+        section: selectedSection,
+        ...schoolScope.scopeParams,
       });
       const payload = response.data?.data || response.data || {};
       const teachers = Array.isArray(payload.teachers) ? payload.teachers : [];
@@ -1733,7 +1931,8 @@ export default function TimetableManager() {
         {
           date: substitutionForm.date,
           class_name: selectedClass,
-          section: selectedSection
+          section: selectedSection,
+          ...schoolScope.scopeParams,
         },
         {
           period_no: Number(substitutionForm.period_no),
@@ -1785,6 +1984,7 @@ export default function TimetableManager() {
                 </p>
               </div>
             </div>
+            <SchoolScopeSelector {...schoolScope} className="w-full sm:ml-auto sm:w-auto" />
           </div>
 
 
@@ -2303,6 +2503,34 @@ export default function TimetableManager() {
 
                 {selectedClass && (
                   <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                    <button
+                      onClick={() => handleExportTimetablePdf(false)}
+                      disabled={!selectedSection || (selectedDay === 'All'
+                        ? days.every(day => !(timetable[day] || []).length)
+                        : !(timetable[selectedDay] || []).length)}
+                      title="Download timetable as PDF"
+                      className={combine(
+                        getSecondaryButtonClass(),
+                        "flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      )}
+                    >
+                      <FileDown className="h-4 w-4" />
+                      PDF
+                    </button>
+                    <button
+                      onClick={() => handleExportTimetablePdf(true)}
+                      disabled={!selectedSection || (selectedDay === 'All'
+                        ? days.every(day => !(timetable[day] || []).length)
+                        : !(timetable[selectedDay] || []).length)}
+                      title="Print timetable"
+                      className={combine(
+                        getSecondaryButtonClass(),
+                        "flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      )}
+                    >
+                      <Printer className="h-4 w-4" />
+                      Print
+                    </button>
                     <button
                       onClick={openAutoGenerateModal}
                       className={combine(

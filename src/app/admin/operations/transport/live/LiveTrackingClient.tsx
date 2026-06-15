@@ -47,6 +47,7 @@ import { transportLiveApi } from '@/lib/transport-live-api';
 import { toastSuccess, toastError, toastInfo } from '@/lib/toast';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useThemeClasses } from '@/hooks/useThemeClasses';
+import { SchoolScopeSelector, useSchoolScope } from '@/components/admin/SchoolScopeSelector';
 
 // Import Leaflet
 import L from 'leaflet';
@@ -70,6 +71,10 @@ interface Bus {
   route_id?: number;
   start_location?: string;
   end_location?: string;
+  morning_start_location?: string;
+  morning_end_location?: string;
+  evening_start_location?: string;
+  evening_end_location?: string;
   status: 'active' | 'inactive' | 'stopped';
   current_location?: {
     latitude: number;
@@ -83,6 +88,7 @@ interface Bus {
 
 interface Stop {
   id: number;
+  trip_type?: string;
   stop_name: string;
   order_number: number;
   arrival_time: string;
@@ -189,6 +195,7 @@ const createUserIcon = () => {
 export default function LiveTrackingPage() {
   const { theme } = useTheme();
   const { get, combine } = useThemeClasses();
+  const schoolScope = useSchoolScope({ storageKey: 'transport_live_school_scope' });
   
   // Refs
   const mapRef = useRef<HTMLDivElement>(null);
@@ -227,11 +234,15 @@ export default function LiveTrackingPage() {
   const [showStops, setShowStops] = useState(true);
   const [stops, setStops] = useState<Stop[]>([]);
   const [isSocketConnected, setIsSocketConnected] = useState(false);
+  const [isAdminLiveConnected, setIsAdminLiveConnected] = useState(false);
   const [activeBusIds, setActiveBusIds] = useState<Set<number>>(new Set());
   const [allLiveBusLocations, setAllLiveBusLocations] = useState<Record<string, AdminLiveBusLocation>>({});
   const [isTrackAllEnabled, setIsTrackAllEnabled] = useState(false);
   const [trackAllExcludedBusIds, setTrackAllExcludedBusIds] = useState<Set<number>>(new Set());
   const [mapReady, setMapReady] = useState(false);
+  const [now, setNow] = useState(() => new Date());
+
+  const activeTrip: 'Morning' | 'Evening' = now.getHours() < 12 ? 'Morning' : 'Evening';
 
   const parseCoordinate = (value: unknown): number | null => {
     if (value === null || value === undefined || value === '') return null;
@@ -249,6 +260,63 @@ export default function LiveTrackingPage() {
     if (busNumber) return `bus-number-${busNumber}`;
     if (Number.isFinite(routeId) && routeId > 0) return `route-${routeId}`;
     return '';
+  };
+
+  const getRouteStops = (bus: Bus | null | undefined) => (
+    (bus?.stops || [])
+      .slice()
+      .sort((a, b) => {
+        const tripOrder = String(a.trip_type || '').localeCompare(String(b.trip_type || ''));
+        if (tripOrder !== 0) return tripOrder;
+        return a.order_number - b.order_number;
+      })
+  );
+
+  const getTripStops = (bus: Bus | null | undefined, trip: 'Morning' | 'Evening' = activeTrip) => (
+    getRouteStops(bus).filter((stop) => String(stop.trip_type || trip) === trip)
+  );
+
+  const getValidTripStops = (bus: Bus | null | undefined, trip: 'Morning' | 'Evening' = activeTrip) => (
+    getTripStops(bus, trip).filter((stop) => {
+      const lat = parseCoordinate(stop.latitude);
+      const lng = parseCoordinate(stop.longitude);
+      return lat !== null && lng !== null;
+    })
+  );
+
+  const getStopsByTrip = (bus: Bus | null | undefined) => {
+    const stopsByTrip: Record<string, Stop[]> = {};
+    getRouteStops(bus).forEach((stop) => {
+      const trip = stop.trip_type || 'Route';
+      stopsByTrip[trip] = stopsByTrip[trip] || [];
+      stopsByTrip[trip].push(stop);
+    });
+    return stopsByTrip;
+  };
+
+  const getRouteLabel = (bus: Bus, trip: 'Morning' | 'Evening') => {
+    const start = trip === 'Morning'
+      ? (bus.morning_start_location || bus.start_location)
+      : (bus.evening_start_location || bus.end_location);
+    const end = trip === 'Morning'
+      ? (bus.morning_end_location || bus.end_location)
+      : (bus.evening_end_location || bus.start_location);
+
+    if (start && end) return `${start} → ${end}`;
+    if (start) return `${start} → End not set`;
+    if (end) return `Start not set → ${end}`;
+    return '';
+  };
+
+  const fitMapToPoints = (points: [number, number][], maxZoom = 16) => {
+    if (!leafletMapRef.current || points.length === 0) return;
+
+    if (points.length === 1) {
+      leafletMapRef.current.setView(points[0], Math.max(leafletMapRef.current.getZoom(), maxZoom));
+      return;
+    }
+
+    leafletMapRef.current.fitBounds(L.latLngBounds(points), { padding: [60, 60], maxZoom });
   };
 
   const getTrackAllBusColor = (busId?: number, busKey?: string) => {
@@ -289,6 +357,11 @@ export default function LiveTrackingPage() {
       })
     );
   };
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(new Date()), 60_000);
+    return () => window.clearInterval(interval);
+  }, []);
 
 
   // Get user location
@@ -396,10 +469,21 @@ export default function LiveTrackingPage() {
       stopMarkersRef.current.push(marker);
     });
 
-    // Remove route path; keep only stop markers.
     if (routePathRef.current) {
       routePathRef.current.remove();
       routePathRef.current = null;
+    }
+    if (validStops.length >= 2) {
+      routePathRef.current = L.polyline(
+        validStops.map((stop) => [Number(stop.latitude), Number(stop.longitude)] as [number, number]),
+        {
+          color: '#2563eb',
+          weight: 5,
+          opacity: 0.85,
+          dashArray: '10 8',
+          lineJoin: 'round',
+        }
+      ).addTo(leafletMapRef.current);
     }
   };
 
@@ -581,7 +665,12 @@ export default function LiveTrackingPage() {
         }
       }, 300);
     }
-  }, [showStops, stops, theme, mapReady]);
+  }, [showStops, stops, theme, mapReady, activeTrip]);
+
+  useEffect(() => {
+    if (!trackingBus) return;
+    setStops(getTripStops(trackingBus, activeTrip));
+  }, [trackingBus, activeTrip]);
 
   // Show all active buses on map via websocket/API polling (without affecting single-bus tracking flow).
   useEffect(() => {
@@ -592,6 +681,7 @@ export default function LiveTrackingPage() {
       ([, item]) => !(item.bus_id && trackAllExcludedBusIds.has(item.bus_id))
     );
     const nextKeys = new Set(locationEntries.map(([key]) => key));
+    const nextStopKeys = new Set<string>();
 
     Object.entries(allBusMarkersRef.current).forEach(([busKey, marker]) => {
       if (!nextKeys.has(busKey)) {
@@ -622,91 +712,103 @@ export default function LiveTrackingPage() {
         marker.bindPopup(popupHtml, { className: 'transport-map-popup' });
         allBusMarkersRef.current[busKey] = marker;
       }
-    });
-  }, [allLiveBusLocations, trackAllExcludedBusIds, mapReady]);
 
-  // Show each live bus stops in Track All mode with per-bus color grouping (no polylines).
-  useEffect(() => {
-    const map = leafletMapRef.current;
-    if (!map) return;
+      const matchedBus = buses.find((bus) => bus.id === item.bus_id || bus.bus_number === item.bus_number);
+      const tripStops = getValidTripStops(matchedBus, activeTrip);
+      const routeKey = busKey;
+      const routeColor = getTrackAllBusColor(item.bus_id, busKey);
 
-    if (!isTrackAllEnabled) {
-      Object.values(allBusRoutePathsRef.current).forEach((polyline) => polyline.remove());
-      allBusRoutePathsRef.current = {};
-      Object.values(allBusStopMarkersRef.current).forEach((marker) => marker.remove());
-      allBusStopMarkersRef.current = {};
-      return;
-    }
+      if (tripStops.length >= 2) {
+        const routePoints = tripStops.map((stop) => [
+          Number(stop.latitude),
+          Number(stop.longitude),
+        ] as [number, number]);
+        const existingRoute = allBusRoutePathsRef.current[routeKey];
+        if (existingRoute) {
+          existingRoute.setLatLngs(routePoints);
+          existingRoute.setStyle({ color: routeColor });
+        } else {
+          allBusRoutePathsRef.current[routeKey] = L.polyline(routePoints, {
+            color: routeColor,
+            weight: 4,
+            opacity: 0.72,
+            dashArray: '8 7',
+            lineJoin: 'round',
+          }).addTo(map);
+        }
+      } else if (allBusRoutePathsRef.current[routeKey]) {
+        allBusRoutePathsRef.current[routeKey].remove();
+        delete allBusRoutePathsRef.current[routeKey];
+      }
 
-    const busesById = new Map<number, Bus>();
-    buses.forEach((bus) => busesById.set(bus.id, bus));
-
-    const nextStopKeys = new Set<string>();
-    Object.entries(allLiveBusLocations).forEach(([locationKey, liveItem]) => {
-      if (!liveItem.bus_id || trackAllExcludedBusIds.has(liveItem.bus_id)) return;
-
-      const bus = busesById.get(liveItem.bus_id);
-      if (!bus?.stops || bus.stops.length === 0) return;
-
-      const validStops = [...bus.stops]
-        .filter((stop) =>
-          stop.latitude !== null &&
-          stop.latitude !== undefined &&
-          stop.longitude !== null &&
-          stop.longitude !== undefined
-        )
-        .sort((a, b) => a.order_number - b.order_number);
-
-      const busColor = getTrackAllBusColor(liveItem.bus_id, locationKey);
-
-      if (validStops.length < 1) return;
-
-      validStops.forEach((stop) => {
-        const stopKey = `trackall-stop-${locationKey}-${stop.id}`;
+      tripStops.forEach((stop) => {
+        const stopKey = `${busKey}-stop-${stop.id}`;
         nextStopKeys.add(stopKey);
-        const position: [number, number] = [Number(stop.latitude), Number(stop.longitude)];
-
+        const stopPosition: [number, number] = [Number(stop.latitude), Number(stop.longitude)];
+        const stopHtml = `
+          <div class="p-3 min-w-[210px] bg-white dark:bg-gray-800 rounded-lg shadow-xl">
+            <div class="font-bold text-gray-900 dark:text-white mb-1">${stop.stop_name}</div>
+            <div class="text-sm text-gray-700 dark:text-gray-200">Bus ${item.bus_number}</div>
+            <div class="text-sm text-gray-700 dark:text-gray-200">${activeTrip} stop #${stop.order_number}</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">Arrival: ${stop.arrival_time || '-'}</div>
+          </div>
+        `;
         const existingStop = allBusStopMarkersRef.current[stopKey];
         if (existingStop) {
-          existingStop.setLatLng(position);
-          existingStop.setIcon(createStopIcon(stop.order_number, false, busColor));
-          return;
+          existingStop.setLatLng(stopPosition);
+          existingStop.setIcon(createStopIcon(stop.order_number, false, routeColor));
+          existingStop.setPopupContent(stopHtml);
+        } else {
+          const stopMarker = L.marker(stopPosition, {
+            icon: createStopIcon(stop.order_number, false, routeColor),
+          }).addTo(map);
+          stopMarker.bindPopup(stopHtml, { className: 'transport-map-popup' });
+          allBusStopMarkersRef.current[stopKey] = stopMarker;
         }
-
-        const stopMarker = L.marker(position, {
-          icon: createStopIcon(stop.order_number, false, busColor),
-        }).addTo(map);
-        stopMarker.bindPopup(
-          `
-            <div class="p-2 min-w-[170px]">
-              <div class="font-semibold text-sm">Bus ${liveItem.bus_number || bus.bus_number}</div>
-              <div class="text-xs mt-1">Stop ${stop.order_number}: ${stop.stop_name}</div>
-              <div class="text-xs text-gray-500 mt-1">Arrival: ${stop.arrival_time}</div>
-            </div>
-          `,
-          { className: 'transport-map-popup' }
-        );
-        allBusStopMarkersRef.current[stopKey] = stopMarker;
       });
     });
 
-    // Ensure track-all polylines are removed from map.
-    Object.values(allBusRoutePathsRef.current).forEach((polyline) => polyline.remove());
-    allBusRoutePathsRef.current = {};
-    Object.entries(allBusStopMarkersRef.current).forEach(([key, marker]) => {
-      if (!nextStopKeys.has(key)) {
-        marker.remove();
-        delete allBusStopMarkersRef.current[key];
+    Object.entries(allBusRoutePathsRef.current).forEach(([busKey, polyline]) => {
+      if (!nextKeys.has(busKey)) {
+        polyline.remove();
+        delete allBusRoutePathsRef.current[busKey];
       }
     });
-  }, [isTrackAllEnabled, allLiveBusLocations, trackAllExcludedBusIds, buses, theme, mapReady]);
+
+    Object.entries(allBusStopMarkersRef.current).forEach(([stopKey, marker]) => {
+      const busKey = stopKey.replace(/-stop-.+$/, '');
+      if (!nextKeys.has(busKey) || !nextStopKeys.has(stopKey)) {
+        marker.remove();
+        delete allBusStopMarkersRef.current[stopKey];
+      }
+    });
+  }, [allLiveBusLocations, trackAllExcludedBusIds, mapReady, buses, activeTrip]);
+
+  useEffect(() => {
+    const map = leafletMapRef.current;
+    if (!map || !isTrackAllEnabled) return;
+
+    const livePoints = Object.values(allLiveBusLocations)
+      .filter((item) => !(item.bus_id && trackAllExcludedBusIds.has(item.bus_id)))
+      .map((item) => [item.latitude, item.longitude] as [number, number])
+      .filter(([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng));
+
+    if (livePoints.length === 0) return;
+
+    if (livePoints.length === 1) {
+      map.setView(livePoints[0], Math.max(map.getZoom(), 15));
+      return;
+    }
+
+    map.fitBounds(L.latLngBounds(livePoints), { padding: [70, 70], maxZoom: 16 });
+  }, [isTrackAllEnabled, allLiveBusLocations, trackAllExcludedBusIds, mapReady]);
 
   // Fetch all buses from the same transport source used by Transport Management
   const fetchAllBuses = async () => {
     try {
-      const listRes = await adminApi.transport.vehicles.list();
+      const listRes = await adminApi.transport.vehicles.list(schoolScope.scopeParams);
       const busesList = Array.isArray(listRes.data?.data) ? listRes.data.data : [];
-      const staffRes = await adminApi.staff.list();
+      const staffRes = await adminApi.staff.list(schoolScope.scopeParams);
       const staffList = Array.isArray(staffRes.data) ? staffRes.data : (staffRes.data?.data || []);
       const staffById = new Map<number, any>();
       staffList.forEach((staff: any) => {
@@ -724,7 +826,7 @@ export default function LiveTrackingPage() {
 
           if (!routeData && busItem?.bus_number) {
             try {
-              const routeRes = await adminApi.transport.routes.byBus(busItem.bus_number);
+              const routeRes = await adminApi.transport.routes.byBus(busItem.bus_number, schoolScope.scopeParams);
               routeData = routeRes.data?.data || null;
             } catch {
               routeData = null;
@@ -732,7 +834,7 @@ export default function LiveTrackingPage() {
           }
 
           try {
-            const passengerRes = await adminApi.transport.passengers.list(busItem.bus_number);
+            const passengerRes = await adminApi.transport.passengers.list(busItem.bus_number, schoolScope.scopeParams);
             occupied = Number(passengerRes.data?.occupied || 0);
             const parsedCapacity = Number(passengerRes.data?.capacity);
             if (Number.isFinite(parsedCapacity) && parsedCapacity >= 0) {
@@ -751,12 +853,26 @@ export default function LiveTrackingPage() {
 
           const stops = (routeData?.stops || []).map((stop: any) => ({
             id: stop.id,
+            trip_type: stop.trip_type || 'Morning',
             stop_name: stop.stop_name,
             order_number: stop.order_number,
             arrival_time: stop.arrival_time,
             latitude: parseCoordinate(stop.latitude),
             longitude: parseCoordinate(stop.longitude),
           }));
+          const routeStart =
+            routeData?.morning_start_location ||
+            routeData?.start_location ||
+            routeData?.evening_start_location ||
+            '';
+          const routeEnd =
+            routeData?.morning_end_location ||
+            routeData?.end_location ||
+            routeData?.evening_end_location ||
+            '';
+          const routeLabel = routeStart && routeEnd
+            ? `${routeStart} → ${routeEnd}`
+            : (routeStart || routeEnd || 'No Route');
 
           return {
             id: Number(busItem.id),
@@ -769,12 +885,14 @@ export default function LiveTrackingPage() {
               : 'Unassigned',
             driver_id: busItem.driver ? String(busItem.driver) : undefined,
             driver_contact: undefined,
-            route: routeData
-              ? `${routeData.start_location} → ${routeData.end_location}`
-              : 'No Route',
+            route: routeData ? routeLabel : 'No Route',
             route_id: routeData?.id,
             start_location: routeData?.start_location,
             end_location: routeData?.end_location,
+            morning_start_location: routeData?.morning_start_location,
+            morning_end_location: routeData?.morning_end_location,
+            evening_start_location: routeData?.evening_start_location,
+            evening_end_location: routeData?.evening_end_location,
             status: 'inactive' as const,
             current_location: undefined,
             stops,
@@ -821,6 +939,7 @@ export default function LiveTrackingPage() {
     adminLiveSocketRef.current = socket;
 
     socket.onopen = () => {
+      setIsAdminLiveConnected(true);
       socket.send(JSON.stringify({ type: 'snapshot_request' }));
     };
 
@@ -920,9 +1039,11 @@ export default function LiveTrackingPage() {
 
     socket.onerror = (error) => {
       console.error('Admin live websocket error:', error);
+      setIsAdminLiveConnected(false);
     };
 
     socket.onclose = () => {
+      setIsAdminLiveConnected(false);
       // Auto-reconnect in background.
       setTimeout(() => {
         if (
@@ -1039,7 +1160,7 @@ export default function LiveTrackingPage() {
   // Active buses endpoint is used only for live status indication
   const fetchActiveBusIds = async () => {
     try {
-      const response = await transportLiveApi.buses.active();
+      const response = await transportLiveApi.buses.active(schoolScope.scopeParams);
       const activeBuses = Array.isArray(response.data?.active_buses) ? response.data.active_buses : [];
       setActiveBusIds(new Set<number>(activeBuses.map((bus: any) => Number(bus?.bus_id)).filter((id: number) => Number.isFinite(id))));
     } catch (error: any) {
@@ -1056,19 +1177,21 @@ export default function LiveTrackingPage() {
       return;
     }
 
-    if (!bus.stops || bus.stops.length === 0) {
-      toastInfo('No stops available for this route');
+    const routeStops = getTripStops(bus, activeTrip);
+
+    if (routeStops.length === 0) {
+      toastInfo(`No ${activeTrip.toLowerCase()} stops available for this route`);
       return;
     }
 
-    const validStops = bus.stops.filter(s => s.latitude && s.longitude);
+    const validStops = getValidTripStops(bus, activeTrip);
     
     if (validStops.length < 2) {
-      toastInfo('Route needs at least 2 stops with coordinates for tracking');
+      toastInfo(`The ${activeTrip.toLowerCase()} route needs at least 2 stops with coordinates`);
       return;
     }
 
-    setStops(bus.stops);
+    setStops(routeStops);
     setTrackingBus(bus);
     trackingBusRef.current = bus;
     connectTrackingSocket(bus);
@@ -1087,25 +1210,19 @@ export default function LiveTrackingPage() {
     toastSuccess(`Now tracking Bus ${bus.bus_number}`);
 
     // Center map to show all stops and bus location
-    if (leafletMapRef.current) {
-      const points: [number, number][] = validStops.map(stop => 
-        [Number(stop.latitude), Number(stop.longitude)]
-      );
-      
-      // Add bus location if available and different from stops
-      if (bus.current_location && bus.current_location.latitude && bus.current_location.longitude) {
-        points.push([bus.current_location.latitude, bus.current_location.longitude]);
-      }
-      
-      const bounds = L.latLngBounds(points);
-      leafletMapRef.current.fitBounds(bounds, { padding: [50, 50] });
-      
-      setTimeout(() => {
-        if (leafletMapRef.current) {
-          leafletMapRef.current.invalidateSize();
-        }
-      }, 300);
+    const points: [number, number][] = validStops.map(stop => 
+      [Number(stop.latitude), Number(stop.longitude)]
+    );
+    if (bus.current_location && bus.current_location.latitude && bus.current_location.longitude) {
+      points.push([bus.current_location.latitude, bus.current_location.longitude]);
     }
+    fitMapToPoints(points);
+
+    setTimeout(() => {
+      if (leafletMapRef.current) {
+        leafletMapRef.current.invalidateSize();
+      }
+    }, 300);
   };
 
   // Stop tracking
@@ -1155,7 +1272,7 @@ export default function LiveTrackingPage() {
         return;
       }
 
-      const response = await transportLiveApi.buses.dateView(bus.bus_number, date);
+      const response = await transportLiveApi.buses.dateView(bus.bus_number, date, schoolScope.scopeParams);
       const passengers = Array.isArray(response.data?.passengers) ? response.data.passengers : [];
       setHistoryData(passengers);
       setHistoryView(true);
@@ -1170,6 +1287,10 @@ export default function LiveTrackingPage() {
 
   // Initialize static bus + route data
   useEffect(() => {
+    stopTracking();
+    setBuses([]);
+    setAllLiveBusLocations({});
+    setTrackAllExcludedBusIds(new Set());
     const initializeData = async () => {
       setLoading(true);
       await fetchAllBuses();
@@ -1190,7 +1311,7 @@ export default function LiveTrackingPage() {
       Object.values(allBusStopMarkersRef.current).forEach((marker) => marker.remove());
       allBusStopMarkersRef.current = {};
     };
-  }, []);
+  }, [schoolScope.selectedSchoolId]);
 
   useEffect(() => {
     if (isTrackAllEnabled) {
@@ -1273,7 +1394,6 @@ export default function LiveTrackingPage() {
   };
 
   const liveCount = activeBusIds.size;
-  const canUseTrackAll = isTrackAllEnabled || liveCount > 0;
   const trackAllLegendItems = isTrackAllEnabled
     ? Object.entries(allLiveBusLocations)
         .filter(([, item]) => !(item.bus_id && trackAllExcludedBusIds.has(item.bus_id)))
@@ -1372,12 +1492,27 @@ export default function LiveTrackingPage() {
                 Live Bus Tracking
               </h1>
               <p className={combine("text-xs sm:text-sm mt-0.5 sm:mt-1", get('text', 'secondary'))}>
-                {liveCount} buses currently live • {isTrackAllEnabled ? 'Tracking all active buses' : 'Select a bus or use Track All Buses'}
+                Shared GPS feed from transport staff • click Track Live to connect
               </p>
             </div>
           </div>
 
           <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 w-full lg:w-auto">
+            <SchoolScopeSelector {...schoolScope} className="w-full sm:w-auto" />
+            <div className={combine(
+              "px-3 sm:px-4 py-2 rounded-lg sm:rounded-xl flex items-center gap-2 w-full sm:w-auto border",
+              isAdminLiveConnected
+                ? theme === 'dark' ? 'bg-emerald-900/30 border-emerald-700/50 text-emerald-300' : 'bg-emerald-100 border-emerald-200 text-emerald-700'
+                : theme === 'dark' ? 'bg-amber-900/30 border-amber-700/50 text-amber-300' : 'bg-amber-100 border-amber-200 text-amber-700'
+            )}>
+              <div className={combine(
+                "w-2 h-2 rounded-full",
+                isAdminLiveConnected ? "bg-green-500 animate-pulse" : "bg-amber-500"
+              )} />
+              <span className="font-medium text-xs sm:text-sm">
+                {isAdminLiveConnected ? 'Shared live feed connected' : 'Waiting for shared live feed'}
+              </span>
+            </div>
             {trackingBus && (
               <div className={combine(
                 "px-3 sm:px-4 py-2 rounded-lg sm:rounded-xl flex items-center gap-2 w-full sm:w-auto",
@@ -1454,9 +1589,9 @@ export default function LiveTrackingPage() {
           <div className={getCardClass('blue')}>
             <div className="flex items-center justify-between">
               <div>
-                <p className={combine("text-xs font-medium", get('text', 'secondary'))}>With Routes</p>
+                <p className={combine("text-xs font-medium", get('text', 'secondary'))}>{activeTrip} Routes</p>
                 <p className={combine("text-lg sm:text-xl md:text-2xl font-bold mt-1 sm:mt-2", get('text', 'primary'))}>
-                  {buses.filter(b => b.route_id).length}
+                  {buses.filter(b => getValidTripStops(b, activeTrip).length >= 2).length}
                 </p>
               </div>
               <div className={combine(
@@ -1499,6 +1634,7 @@ export default function LiveTrackingPage() {
                 )}
               </div>
               <div className="flex flex-wrap gap-2">
+               
                 {trackingBus && stops.length > 0 && (
                   <button
                     onClick={() => setShowStops(!showStops)}
@@ -1512,7 +1648,7 @@ export default function LiveTrackingPage() {
 
                 <button
                   onClick={() => setMapType(mapType === 'street' ? 'satellite' : 'street')}
-                  className={combine(getButtonClass('secondary'), "px-2.5 sm:px-3 py-1")}
+                  className={combine(getButtonClass('secondary'), "px-2.5 sm:px-3 py-1 flex items-center gap-1")}
                   title={`Switch to ${mapType === 'street' ? 'Satellite' : 'Street'} view`}
                 >
                   <FaLayers className="mr-1" />
@@ -1557,29 +1693,43 @@ export default function LiveTrackingPage() {
 
             {trackAllLegendItems.length > 0 && (
               <div className={combine(
-                "mt-4 mx-4 sm:mx-6 p-3 rounded-lg border",
+                "mt-4 mx-4 sm:mx-6 p-3 sm:p-4 rounded-xl border",
                 theme === 'dark' ? 'bg-gray-800/60 border-gray-700' : 'bg-white border-gray-200'
               )}>
-                <p className={combine("text-xs font-semibold mb-2", get('text', 'secondary'))}>
-                  Track All Color Legend
-                </p>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                  <div>
+                    <p className={combine("text-sm font-semibold", get('text', 'primary'))}>
+                      Live Buses on Map
+                    </p>
+                    <p className={combine("text-xs", get('text', 'secondary'))}>
+                      {activeTrip} routes and shared transport staff GPS locations
+                    </p>
+                  </div>
+                  <span className={combine(
+                    "inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold w-fit",
+                    theme === 'dark' ? 'bg-emerald-900/30 text-emerald-300' : 'bg-emerald-100 text-emerald-700'
+                  )}>
+                    <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                    {trackAllLegendItems.length} visible
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
                   {trackAllLegendItems.map((item) => (
                     <div
                       key={item.key}
                       className={combine(
-                        "inline-flex items-center gap-2 rounded-md px-2 py-1 text-xs border",
+                        "flex items-center gap-2 rounded-lg px-3 py-2 text-xs border min-w-0",
                         theme === 'dark' ? 'border-gray-600 bg-gray-900/40' : 'border-gray-200 bg-gray-50'
                       )}
                     >
                       <span
-                        className="w-3 h-3 rounded-full border border-white/60"
+                        className="w-3 h-3 rounded-full border border-white/60 shrink-0"
                         style={{ backgroundColor: item.color }}
                       />
-                      <span className={combine("font-medium", get('text', 'primary'))}>
+                      <span className={combine("font-medium whitespace-nowrap", get('text', 'primary'))}>
                         Bus {item.busNumber}
                       </span>
-                      <span className={combine(get('text', 'tertiary'))}>
+                      <span className={combine("truncate", get('text', 'tertiary'))}>
                         {item.routeLabel}
                       </span>
                     </div>
@@ -1587,6 +1737,30 @@ export default function LiveTrackingPage() {
                 </div>
               </div>
             )}
+
+            {isTrackAllEnabled && trackAllLegendItems.length === 0 && !trackingBus && (
+              <div className={combine(
+                "mt-4 mx-4 sm:mx-6 p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center gap-3",
+                theme === 'dark' ? 'bg-gray-800/60 border-gray-700' : 'bg-white border-gray-200'
+              )}>
+                <div className={combine(
+                  "w-10 h-10 rounded-xl flex items-center justify-center shrink-0",
+                  theme === 'dark' ? 'bg-blue-900/40 text-blue-300' : 'bg-blue-100 text-blue-700'
+                )}>
+                  <FaSatelliteDish />
+                </div>
+                <div>
+                  <p className={combine("text-sm font-semibold", get('text', 'primary'))}>
+                    Waiting for shared bus locations
+                  </p>
+                  <p className={combine("text-xs mt-1", get('text', 'secondary'))}>
+                    Live buses will appear here automatically when transport staff share GPS from the mobile app.
+                  </p>
+                </div>
+              </div>
+            )}
+
+           
 
             {/* Map Info Overlay */}
             {trackingBus && busLocation && (
@@ -1709,54 +1883,6 @@ export default function LiveTrackingPage() {
           </button>
         )}
 
-        {/* Search and Filters */}
-        <div className={getCardClass('blue') + " mb-4 sm:mb-6 md:mb-8"}>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
-            <div className="relative">
-              <FaSearch className={combine(
-                "absolute left-3 top-1/2 transform -translate-y-1/2 text-sm",
-                get('icon', 'secondary')
-              )} />
-              <input
-                type="text"
-                placeholder="Search by bus number, driver, route..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className={getInputClass()}
-                style={{ paddingLeft: '2.5rem' }}
-              />
-            </div>
-            
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value as any)}
-              className={getInputClass()}
-            >
-              <option value="all">All Buses</option>
-              <option value="live">Live Now</option>
-              <option value="active">Active (with route)</option>
-              <option value="inactive">Inactive</option>
-            </select>
-
-            <button
-              onClick={() => setIsTrackAllEnabled((prev) => !prev)}
-              disabled={!canUseTrackAll}
-              className={combine(
-                isTrackAllEnabled ? getButtonClass('danger') : getButtonClass('primary'),
-                "w-full h-full min-h-[44px] flex items-center justify-center gap-2",
-                !canUseTrackAll ? "opacity-50 cursor-not-allowed" : ""
-              )}
-              title={
-                !canUseTrackAll
-                  ? 'No active buses available to track'
-                  : (isTrackAllEnabled ? 'Stop tracking all buses' : 'Track all active buses on map')
-              }
-            >
-              {isTrackAllEnabled ? <FaStop /> : <FaPlay />}
-              {isTrackAllEnabled ? 'Stop All Live' : 'Track All Buses'}
-            </button>
-          </div>
-        </div>
 
         {/* Buses Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
@@ -1796,7 +1922,12 @@ export default function LiveTrackingPage() {
               const statusColor = getStatusColor(isLiveBus ? 'active' : 'inactive', bus.current_location?.last_updated, isLiveBus);
               const isTracking = trackingBus?.id === bus.id;
               const isExcludedInTrackAll = trackAllExcludedBusIds.has(bus.id);
-              const validStops = getValidStopsCount(bus.stops);
+              const routeStops = getRouteStops(bus);
+              const activeTripStops = getTripStops(bus, activeTrip);
+              const stopsByTrip = getStopsByTrip(bus);
+              const morningRoute = getRouteLabel(bus, 'Morning');
+              const eveningRoute = getRouteLabel(bus, 'Evening');
+              const validStops = getValidStopsCount(activeTripStops);
               const canTrack = Boolean(isLiveBus && bus.route_id && validStops >= 2);
               
               return (
@@ -1854,7 +1985,7 @@ export default function LiveTrackingPage() {
                   </div>
 
                   {/* Stops Info */}
-                  {bus.stops && bus.stops.length > 0 && (
+                  {routeStops.length > 0 && (
                     <div className={combine(
                       "p-2.5 sm:p-3 rounded-lg sm:rounded-xl mb-3 sm:mb-4",
                       theme === 'dark' ? 'bg-blue-900/20' : 'bg-blue-50'
@@ -1862,22 +1993,31 @@ export default function LiveTrackingPage() {
                       <div className="flex items-center gap-2 mb-2">
                         <FaMapMarkerAlt className={theme === 'dark' ? 'text-blue-400' : 'text-blue-600'} />
                         <span className={combine("text-sm font-medium", get('text', 'primary'))}>
-                          Stops ({validStops}/{bus.stops.length} with coordinates)
+                          Route Stops 
                         </span>
                       </div>
-                      <div className="flex flex-wrap gap-1">
-                        {bus.stops.map((stop: Stop, index: number) => (
-                          <div
-                            key={stop.id}
-                            className={combine(
-                              "px-2 py-1 rounded text-xs",
-                              stop.latitude && stop.longitude
-                                ? theme === 'dark' ? 'bg-green-900/30 text-green-400' : 'bg-green-100 text-green-700'
-                                : theme === 'dark' ? 'bg-gray-700 text-gray-400' : 'bg-gray-200 text-gray-600'
-                            )}
-                            title={stop.latitude && stop.longitude ? stop.stop_name : `${stop.stop_name} (no coordinates)`}
-                          >
-                            {stop.order_number}. {stop.stop_name}
+                      <div className="space-y-2">
+                        {Object.entries(stopsByTrip).map(([trip, tripStops]) => (
+                          <div key={trip}>
+                            <p className={combine("mb-1 text-[11px] font-semibold uppercase", get('text', 'tertiary'))}>
+                              {trip}
+                            </p>
+                            <div className="flex flex-wrap gap-1">
+                              {tripStops.map((stop: Stop) => (
+                                <div
+                                  key={`${trip}-${stop.id}`}
+                                  className={combine(
+                                    "px-2 py-1 rounded text-xs",
+                                    stop.latitude && stop.longitude
+                                      ? theme === 'dark' ? 'bg-green-900/30 text-green-400' : 'bg-green-100 text-green-700'
+                                      : theme === 'dark' ? 'bg-gray-700 text-gray-400' : 'bg-gray-200 text-gray-600'
+                                  )}
+                                  title={stop.latitude && stop.longitude ? stop.stop_name : `${stop.stop_name} (no coordinates)`}
+                                >
+                                  {stop.order_number}. {stop.stop_name}
+                                </div>
+                              ))}
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -1942,7 +2082,7 @@ export default function LiveTrackingPage() {
                           Occupied: {bus.occupied}
                         </span>
                       </div>
-                      <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="flex items-center gap-2 text-xs">
                         <p className={combine(get('text', 'tertiary'))}>
                           Total: {bus.capacity !== null ? bus.capacity : '--'}
                         </p>
@@ -1954,23 +2094,55 @@ export default function LiveTrackingPage() {
                   </div>
 
                   {/* Route Info */}
-                  {bus.route && (
+                  {bus.route_id ? (
                     <div className={combine(
                       "p-3 sm:p-4 rounded-lg sm:rounded-xl mb-3 sm:mb-4",
                       theme === 'dark' ? 'bg-blue-900/20' : 'bg-blue-50'
                     )}>
                       <div className="flex items-center gap-2 mb-2">
                         <FaRoute className={theme === 'dark' ? 'text-blue-400' : 'text-blue-600'} />
-                        <span className={combine("text-xs font-medium", get('text', 'primary'))}>Route</span>
+                        <span className={combine("text-xs font-medium", get('text', 'primary'))}>Assigned Route</span>
                       </div>
-                      <p className={combine("text-xs sm:text-sm font-medium mb-2", get('text', 'primary'))}>{bus.route}</p>
-                      {bus.start_location && bus.end_location && (
-                        <div className="flex items-center gap-2 text-xs bg-white/50 dark:bg-gray-800/50 p-2 rounded-lg">
-                          <span className="font-medium text-blue-600 dark:text-blue-400">{bus.start_location}</span>
-                          <FaArrowRight className={combine("text-xs", get('icon', 'secondary'))} />
-                          <span className="font-medium text-blue-600 dark:text-blue-400">{bus.end_location}</span>
+                      <div className="space-y-2">
+                        <div className="flex items-start gap-2 text-xs bg-white/50 dark:bg-gray-800/50 p-2 rounded-lg">
+                          <span className={combine(
+                            "shrink-0 rounded-md px-2 py-0.5 font-semibold",
+                            activeTrip === 'Morning'
+                              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                              : 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+                          )}>
+                            Morning
+                          </span>
+                          <span className={combine("font-medium", get('text', 'primary'))}>
+                            {morningRoute || 'Not configured'}
+                          </span>
                         </div>
-                      )}
+                        <div className="flex items-start gap-2 text-xs bg-white/50 dark:bg-gray-800/50 p-2 rounded-lg">
+                          <span className={combine(
+                            "shrink-0 rounded-md px-2 py-0.5 font-semibold",
+                            activeTrip === 'Evening'
+                              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                              : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300'
+                          )}>
+                            Evening
+                          </span>
+                          <span className={combine("font-medium", get('text', 'primary'))}>
+                            {eveningRoute || 'Not configured'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className={combine(
+                      "p-3 sm:p-4 rounded-lg sm:rounded-xl mb-3 sm:mb-4 border border-dashed",
+                      theme === 'dark' ? 'bg-gray-800/40 border-gray-700' : 'bg-gray-50 border-gray-300'
+                    )}>
+                      <div className="flex items-center gap-2">
+                        <FaRoute className={combine(get('icon', 'secondary'))} />
+                        <span className={combine("text-xs font-medium", get('text', 'secondary'))}>
+                          No route assigned
+                        </span>
+                      </div>
                     </div>
                   )}
 
@@ -1986,8 +2158,8 @@ export default function LiveTrackingPage() {
                           )}
                           title={isExcludedInTrackAll ? 'Show this bus on map' : 'Hide this bus from map'}
                         >
-                          {isExcludedInTrackAll ? <FaPlay /> : <FaStop />}
-                          {isExcludedInTrackAll ? 'Show Live' : 'Stop Tracking'}
+                          {isExcludedInTrackAll ? <FaEye /> : <FaEyeSlash />}
+                          {isExcludedInTrackAll ? 'Show on Map' : 'Hide from Map'}
                         </button>
                       ) : (
                         <button
@@ -2023,7 +2195,7 @@ export default function LiveTrackingPage() {
                           title={
                             !isLiveBus ? 'Bus is not live now' :
                             !bus.route_id ? 'No route assigned to this bus' : 
-                            validStops < 2 ? 'Route needs at least 2 stops with coordinates' : 
+                            validStops < 2 ? `${activeTrip} route needs at least 2 stops with coordinates` : 
                             'Connect to live socket and show on map'
                           }
                         >
@@ -2044,7 +2216,7 @@ export default function LiveTrackingPage() {
                   {bus.route_id && validStops < 2 && (
                     <div className="mt-3 text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1 bg-amber-50 dark:bg-amber-900/20 p-2 rounded-lg">
                       <FaMapMarkerAlt />
-                      <span>Need at least 2 stops with coordinates for route display</span>
+                      <span>{activeTrip} route needs at least 2 stops with coordinates for route display</span>
                     </div>
                   )}
                 </div>

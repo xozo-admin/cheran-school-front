@@ -7,6 +7,7 @@ import { toastError, toastSuccess } from '@/lib/toast';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useThemeClasses } from '@/hooks/useThemeClasses';
 import { resolveStaffRole } from '@/lib/staff-access';
+import { SchoolScopeSelector, useSchoolScope } from '@/components/admin/SchoolScopeSelector';
 import {
   AlertTriangle,
   Bed,
@@ -250,6 +251,7 @@ type HostelFeeDueReport = {
 export default function AdminHostelPage() {
   const { theme } = useTheme();
   const { get, combine } = useThemeClasses();
+  const schoolScope = useSchoolScope({ storageKey: 'operations_hostel_school_scope' });
   const pathname = usePathname();
   const todayDate = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [staffRoleContext, setStaffRoleContext] = useState('');
@@ -722,24 +724,25 @@ export default function AdminHostelPage() {
         staffRes,
         yearsRes,
       ] = await Promise.all([
-        adminApi.hostel.dashboard(),
-        adminApi.hostel.blocks.list(),
-        adminApi.hostel.rooms.list(),
-        adminApi.hostel.beds.list(),
-        isRestrictedStaffStructureMode ? Promise.resolve({ data: { data: [] } }) : adminApi.hostel.wardenAssignments.list(),
-        adminApi.hostel.allocations.list(),
-        adminApi.hostel.attendance.list(attendanceFilterDate ? { date: attendanceFilterDate } : undefined),
-        adminApi.hostel.incidents.list(),
+        adminApi.hostel.dashboard(schoolScope.scopeParams),
+        adminApi.hostel.blocks.list(schoolScope.scopeParams),
+        adminApi.hostel.rooms.list(schoolScope.scopeParams),
+        adminApi.hostel.beds.list(schoolScope.scopeParams),
+        isRestrictedStaffStructureMode ? Promise.resolve({ data: { data: [] } }) : adminApi.hostel.wardenAssignments.list(schoolScope.scopeParams),
+        adminApi.hostel.allocations.list(schoolScope.scopeParams),
+        adminApi.hostel.attendance.list({ ...(attendanceFilterDate ? { date: attendanceFilterDate } : {}), ...schoolScope.scopeParams }),
+        adminApi.hostel.incidents.list(schoolScope.scopeParams),
         adminApi.hostel.inOut.list({
           ...(inOutFilterFromDate ? { date_from: inOutFilterFromDate } : {}),
           ...(inOutFilterToDate ? { date_to: inOutFilterToDate } : {}),
           ...(inOutFilterType !== 'all' ? { movement_type: inOutFilterType } : {}),
+          ...schoolScope.scopeParams,
         }),
-        adminApi.students.enrollments({ page: 1, page_size: 1000 }),
+        adminApi.students.enrollments({ page: 1, page_size: 1000, ...schoolScope.scopeParams }),
         isRestrictedStaffStructureMode
           ? Promise.resolve({ data: { data: [] } })
-          : adminApi.staff.listPaginated({ page: 1, page_size: 300, role: 'hostel_warden' }),
-        adminApi.school.academicYears(),
+          : adminApi.staff.listPaginated({ page: 1, page_size: 300, role: 'hostel_warden', ...schoolScope.scopeParams }),
+        adminApi.school.academicYears(schoolScope.scopeParams),
       ]);
 
       setDashboard({ ...DEFAULT_DASHBOARD, ...unwrap<DashboardData>(dashboardRes, DEFAULT_DASHBOARD) });
@@ -829,7 +832,7 @@ export default function AdminHostelPage() {
     } finally {
       setLoading(false);
     }
-  }, [attendanceFilterDate, inOutFilterFromDate, inOutFilterToDate, inOutFilterType, isRestrictedStaffStructureMode]);
+  }, [attendanceFilterDate, inOutFilterFromDate, inOutFilterToDate, inOutFilterType, isRestrictedStaffStructureMode, schoolScope.selectedSchoolId]);
 
   useEffect(() => {
     if (!isRestrictedStaffStructureMode) return;
@@ -963,10 +966,10 @@ export default function AdminHostelPage() {
     const id = confirmState.id;
 
     await handleRequest(async () => {
-      if (confirmState.kind === 'block') await adminApi.hostel.blocks.delete(id);
-      if (confirmState.kind === 'room') await adminApi.hostel.rooms.delete(id);
-      if (confirmState.kind === 'bed') await adminApi.hostel.beds.delete(id);
-      if (confirmState.kind === 'allocation') await adminApi.hostel.allocations.delete(id);
+      if (confirmState.kind === 'block') await adminApi.hostel.blocks.delete(id, schoolScope.scopeParams);
+      if (confirmState.kind === 'room') await adminApi.hostel.rooms.delete(id, schoolScope.scopeParams);
+      if (confirmState.kind === 'bed') await adminApi.hostel.beds.delete(id, schoolScope.scopeParams);
+      if (confirmState.kind === 'allocation') await adminApi.hostel.allocations.delete(id, schoolScope.scopeParams);
     }, 'Deleted successfully');
 
     setConfirmState({ open: false, kind: 'block', id: null, title: '', message: '' });
@@ -985,6 +988,7 @@ export default function AdminHostelPage() {
       params.append('fee_type', 'Hostel');
       if (hostelFeeFilters.class_name) params.append('class', hostelFeeFilters.class_name);
       if (hostelFeeFilters.section) params.append('section', hostelFeeFilters.section);
+      if (schoolScope.scopeParams.school_id) params.append('school_id', String(schoolScope.scopeParams.school_id));
 
       const response = await adminApi.fees.feeGetReport(params);
       setHostelFeeClassReport(unwrap<HostelFeeClassReport | null>(response, null));
@@ -1007,6 +1011,7 @@ export default function AdminHostelPage() {
       const params = new URLSearchParams();
       params.append('academic_year', hostelFeeFilters.academic_year);
       params.append('fee_type', 'Hostel');
+      if (schoolScope.scopeParams.school_id) params.append('school_id', String(schoolScope.scopeParams.school_id));
 
       const response = await adminApi.fees.feeGetReportDue(params);
       setHostelFeeDueReport(unwrap<HostelFeeDueReport | null>(response, null));
@@ -1039,12 +1044,15 @@ export default function AdminHostelPage() {
             </p>
             </div>
           </div>
-          <button onClick={loadData} className={primaryButtonClass} disabled={loading}>
-            <span className="inline-flex items-center gap-2">
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-              Refresh
-            </span>
-          </button>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <SchoolScopeSelector {...schoolScope} className="w-full sm:w-auto" />
+            <button onClick={loadData} className={primaryButtonClass} disabled={loading}>
+              <span className="inline-flex items-center gap-2">
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                Refresh
+              </span>
+            </button>
+          </div>
         </div>
 
         {error && (
@@ -1470,6 +1478,7 @@ export default function AdminHostelPage() {
                             name: blockName.trim(),
                             gender_policy: blockGenderPolicy,
                             description: blockDescription.trim(),
+                            ...schoolScope.scopeParams,
                           });
                           setBlockName('');
                           setBlockGenderPolicy('boys');
@@ -1516,6 +1525,7 @@ export default function AdminHostelPage() {
                             capacity: Number(roomForm.capacity || 1),
                             monthly_fee: roomForm.monthly_fee || 0,
                             room_type: roomForm.room_type as 'standard' | 'ac' | 'deluxe',
+                            ...schoolScope.scopeParams,
                           });
                           setRoomForm({ block: '', room_number: '', floor: 0, capacity: 1, monthly_fee: '', room_type: 'standard' });
                           setActiveStructureForm(null);
@@ -1554,7 +1564,7 @@ export default function AdminHostelPage() {
                         const roomPk = toPkNumber(bedForm.room);
                         if (!roomPk) return toastError('Please select a valid room.');
                         handleRequest(async () => {
-                          await adminApi.hostel.beds.create({ room: roomPk, bed_number: bedForm.bed_number.trim() });
+                          await adminApi.hostel.beds.create({ room: roomPk, bed_number: bedForm.bed_number.trim(), ...schoolScope.scopeParams });
                           setBedForm({ room: '', bed_number: '' });
                           setActiveStructureForm(null);
                         }, 'Bed created');
@@ -1587,7 +1597,7 @@ export default function AdminHostelPage() {
                         const staffPk = toPkNumber(wardenForm.staff);
                         if (!blockPk || !staffPk) return toastError('Please select valid block and staff.');
                         handleRequest(async () => {
-                          await adminApi.hostel.wardenAssignments.create({ block: blockPk, staff: staffPk });
+                          await adminApi.hostel.wardenAssignments.create({ block: blockPk, staff: staffPk, ...schoolScope.scopeParams });
                           setWardenForm({ block: '', staff: '' });
                           setActiveStructureForm(null);
                         }, 'Warden assigned');
@@ -1641,6 +1651,7 @@ export default function AdminHostelPage() {
                           description: String(editingBlock.description || '').trim(),
                           gender_policy: editingBlock.gender_policy,
                           is_active: Boolean(editingBlock.is_active),
+                          ...schoolScope.scopeParams,
                         });
                         setEditingBlock(null);
                       }, 'Block updated');
@@ -1716,6 +1727,7 @@ export default function AdminHostelPage() {
                           staff: staffPk,
                           is_primary: Boolean(editingWarden.is_primary),
                           is_active: Boolean(editingWarden.is_active),
+                          ...schoolScope.scopeParams,
                         });
                         setEditingWarden(null);
                       }, 'Warden assignment updated');
@@ -1795,6 +1807,7 @@ export default function AdminHostelPage() {
                           monthly_fee: editingRoom.monthly_fee || 0,
                           room_type: editingRoom.room_type || 'standard',
                           is_active: Boolean(editingRoom.is_active),
+                          ...schoolScope.scopeParams,
                         });
                         setEditingRoom(null);
                       }, 'Room updated');
@@ -1851,6 +1864,7 @@ export default function AdminHostelPage() {
                           room: roomPk,
                           bed_number: String(editingBed.bed_number || '').trim(),
                           is_active: Boolean(editingBed.is_active),
+                          ...schoolScope.scopeParams,
                         });
                         setEditingBed(null);
                       }, 'Bed updated');
@@ -1973,6 +1987,7 @@ export default function AdminHostelPage() {
                           bed: bedPk,
                           academic_year: yearPk,
                           check_in_date: allocationForm.check_in_date,
+                          ...schoolScope.scopeParams,
                         });
                         setAllocationForm({ student: '', bed: '', academic_year: '', check_in_date: '' });
                         setShowAllocationCreateModal(false);
@@ -2094,6 +2109,7 @@ export default function AdminHostelPage() {
                             is_active: editingAllocation.is_active,
                             check_out_date: editingAllocation.check_out_date || null,
                             notes: editingAllocation.notes || '',
+                            ...schoolScope.scopeParams,
                           });
                           setEditingAllocation(null);
                         }, 'Allocation updated')
@@ -2283,7 +2299,7 @@ export default function AdminHostelPage() {
                         return;
                       }
                       handleRequest(async () => {
-                        await adminApi.hostel.attendance.upsert({ ...attendanceForm, allocation: allocationPk });
+                        await adminApi.hostel.attendance.upsert({ ...attendanceForm, allocation: allocationPk, ...schoolScope.scopeParams });
                         setShowAttendanceFormModal(false);
                       }, 'Attendance saved');
                     }}
@@ -2343,6 +2359,7 @@ export default function AdminHostelPage() {
                           movement_type: inOutForm.movement_type,
                           moved_at: inOutForm.moved_at,
                           reason: inOutForm.reason.trim(),
+                          ...schoolScope.scopeParams,
                         });
                         setInOutForm({
                           allocation: '',
@@ -2641,6 +2658,7 @@ export default function AdminHostelPage() {
                                     incident_id: incident.id,
                                     resolved: true,
                                     resolution_note: 'Resolved by admin',
+                                    ...schoolScope.scopeParams,
                                   });
                                 },
                                 'Incident resolved'
@@ -2676,7 +2694,7 @@ export default function AdminHostelPage() {
                         return;
                       }
                       handleRequest(async () => {
-                        await adminApi.hostel.incidents.create({ ...incidentForm, allocation: allocationPk });
+                        await adminApi.hostel.incidents.create({ ...incidentForm, allocation: allocationPk, ...schoolScope.scopeParams });
                         setIncidentForm({ allocation: '', title: '', description: '', severity: 'low', occurred_at: '' });
                         setShowIncidentFormModal(false);
                       }, 'Incident created');
