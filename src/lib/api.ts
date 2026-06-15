@@ -11,9 +11,7 @@ const ENABLE_ENCRYPTION =
 
 
 export const backend_api =
-  process.env.NEXT_PUBLIC_BACKEND_API ||
-  process.env.NEXT_PUBLIC_API_URL ||
-  'macid.pythonanywhere.com';
+  'https://macid.pythonanywhere.com';
 const API_BASE_HTTP = `${backend_api.replace(/\/+$/, '')}/api/`;
 
 
