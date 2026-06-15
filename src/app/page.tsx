@@ -71,7 +71,7 @@ export default function Home() {
                     <div className="sm:hidden flex flex-col items-center text-center mb-6">
                       <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl shadow-lg mb-3 overflow-hidden">
                         <Image
-                          src="/app_logo.jpeg"
+                          src="/app_logo1.png"
                           alt="App Logo"
                           width={64}
                           height={64}

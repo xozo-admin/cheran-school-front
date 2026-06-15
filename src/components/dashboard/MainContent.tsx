@@ -903,146 +903,180 @@ export const MainContent = () => {
 
         </div>
 
-        <div className="mb-6 grid grid-cols-1 gap-5 2xl:grid-cols-[minmax(0,1fr)_380px]">
-          <div className="min-w-0 space-y-5">
-            <div className={combine('grid grid-cols-1 gap-4 sm:grid-cols-2', isInstitutionDashboard ? 'xl:grid-cols-3' : 'xl:grid-cols-2')}>
-              {isInstitutionDashboard && (
-                <div className={combine('rounded-xl border p-5 shadow-sm transition hover:shadow-md', theme === 'dark' ? 'bg-gray-900/70' : 'bg-white', get('border', 'primary'))}>
-                  <div className="flex min-h-[92px] items-center justify-between gap-3">
-                    <div>
-                      <p className={`text-xs font-semibold uppercase ${get('text', 'tertiary')}`}>Schools</p>
-                      <p className={`mt-1 text-2xl font-bold ${get('text', 'primary')}`}>{activeSchoolCount}/{totalSchoolCount}</p>
-                      <p className={`mt-1 text-xs ${get('text', 'secondary')}`}>Active campuses</p>
-                    </div>
-                    <Building2 className="h-7 w-7 shrink-0 text-blue-700" />
-                  </div>
-                </div>
-              )}
-              <div className={combine('rounded-xl border p-5 shadow-sm transition hover:shadow-md', theme === 'dark' ? 'bg-gray-900/70' : 'bg-white', get('border', 'primary'))}>
-                <div className="flex min-h-[92px] items-center justify-between gap-3">
-                  <div>
-                    <p className={`text-xs font-semibold uppercase ${get('text', 'tertiary')}`}>{isInstitutionDashboard ? 'Students' : 'School Students'}</p>
-                    <p className={`mt-1 text-2xl font-bold ${get('text', 'primary')}`}>{overview.total_students}</p>
-                    <p className={`mt-1 text-xs ${get('text', 'secondary')}`}>{overview.comparison_text}</p>
-                  </div>
-                  <Users className="h-7 w-7 shrink-0 text-blue-700" />
-                </div>
-              </div>
-              <div className={combine('rounded-xl border p-5 shadow-sm transition hover:shadow-md', theme === 'dark' ? 'bg-gray-900/70' : 'bg-white', get('border', 'primary'))}>
-                <div className="flex min-h-[92px] items-center justify-between gap-3">
-                  <div>
-                    <p className={`text-xs font-semibold uppercase ${get('text', 'tertiary')}`}>Academic Year</p>
-                    <p className={`mt-1 text-xl font-bold ${get('text', 'primary')}`}>{stats?.meta?.academic_year || 'N/A'}</p>
-                    <p className={`mt-1 text-xs ${get('text', 'secondary')}`}>{stats.meta.time_periods.daily}</p>
-                  </div>
-                  <GraduationCap className="h-7 w-7 shrink-0 text-purple-700" />
-                </div>
-              </div>
+        <div className="mb-6 w-full">
+  <div className="w-full space-y-5">
+    <div
+      className={combine(
+        "grid w-full grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3",
+        isInstitutionDashboard ? "xl:grid-cols-3" : "xl:grid-cols-3"
+      )}
+    >
+      {isInstitutionDashboard && (
+        <div
+          className={combine(
+            "rounded-xl border p-5 shadow-sm transition hover:shadow-md",
+            theme === "dark" ? "bg-gray-900/70" : "bg-white",
+            get("border", "primary")
+          )}
+        >
+          <div className="flex min-h-[92px] items-center justify-between gap-3">
+            <div>
+              <p className={`text-xs font-semibold uppercase ${get("text", "tertiary")}`}>
+                Schools
+              </p>
+
+              <p className={`mt-1 text-2xl font-bold ${get("text", "primary")}`}>
+                {activeSchoolCount}/{totalSchoolCount}
+              </p>
+
+              <p className={`mt-1 text-xs ${get("text", "secondary")}`}>
+                Active campuses
+              </p>
             </div>
 
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <h2 className={`text-xl font-bold sm:text-2xl ${get('text', 'primary')}`}>Attendance</h2>
-                <p className={`mt-1 text-xs sm:text-sm ${get('text', 'secondary')}`}>Daily presence and academic readiness for {selectedSchoolName}</p>
-              </div>
-              <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto lg:items-center lg:justify-end">
-                {schoolOptions.length > 1 && (
-                  <label className={`flex min-h-11 w-full items-center gap-2 rounded-xl border px-3 py-2 shadow-sm sm:min-w-[260px] lg:w-[320px] ${theme === 'dark' ? 'border-gray-700 bg-gray-900 text-gray-100' : 'border-slate-200 bg-white text-slate-700'}`}>
-                    <School className="h-4 w-4 shrink-0 text-blue-600" />
-                    <select
-                      value={selectedSchoolId === '__refresh__' ? 'all' : selectedSchoolId}
-                      onChange={(event) => setSelectedSchoolId(event.target.value)}
-                      className={`w-full bg-transparent text-sm font-medium outline-none ${get('text', 'primary')}`}
-                    >
-                      <option value="all">All Schools</option>
-                      {schoolOptions.map((school) => (
-                        <option key={school.id} value={school.id}>
-                          {school.name}{school.code ? ` (${school.code})` : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
-                <button
-                  type="button"
-                  onClick={() => router.push('/admin/students/attendance')}
-                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border shadow-sm transition ${theme === 'dark' ? 'border-gray-700 bg-gray-900 text-gray-100 hover:bg-gray-800' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
-                  title="Attendance history"
-                  aria-label="Attendance history"
-                >
-                  <History className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
+            <Building2 className="h-7 w-7 shrink-0 text-blue-700" />
+          </div>
+        </div>
+      )}
 
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3 sm:gap-5 lg:gap-6">
-              <div className="2xl:col-span-1">
-                <StatCard
-                  title="Students"
-                  value={totalStudentsAttendance}
-                  icon={UserCheck}
-                  color={presentAttendancePercentage >= 80 ? 'green' : 'orange'}
-                  subtitle={`${totalPresentStudents}/${totalStudents} present today`}
-                />
-              </div>
+      <div
+        className={combine(
+          "rounded-xl border p-5 shadow-sm transition hover:shadow-md",
+          theme === "dark" ? "bg-gray-900/70" : "bg-white",
+          get("border", "primary")
+        )}
+      >
+        <div className="flex min-h-[92px] items-center justify-between gap-3">
+          <div>
+            <p className={`text-xs font-semibold uppercase ${get("text", "tertiary")}`}>
+              {isInstitutionDashboard ? "Students" : "School Students"}
+            </p>
 
-              <div className={isInstitutionDashboard ? "2xl:col-span-1" : "2xl:col-span-1"}>
-                <StatCard
-                  title="Teachers"
-                  value={stats.teachers.total}
-                  icon={GraduationCap}
-                  color="purple"
-                  subtitle={`${stats.teachers.today.present} present today`}
-                />
-              </div>
+            <p className={`mt-1 text-2xl font-bold ${get("text", "primary")}`}>
+              {overview.total_students}
+            </p>
 
-              <div className="2xl:col-span-1">
-                <StatCard
-                  title="Staff"
-                  value={stats.staff.total}
-                  icon={Briefcase}
-                  color="indigo"
-                  subtitle={`${stats.staff.today.present} present today`}
-                />
-              </div>
-            </div>
+            <p className={`mt-1 text-xs ${get("text", "secondary")}`}>
+              {overview.comparison_text}
+            </p>
           </div>
 
-          <aside className={combine('relative h-full min-h-[340px] overflow-hidden rounded-xl border p-4 shadow-sm transition hover:shadow-md 2xl:min-h-0', theme === 'dark' ? 'bg-gray-900/80' : 'bg-white', get('border', 'primary'))}>
-            <div className="absolute left-4 top-4 z-10 flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 shadow-sm dark:border-emerald-800/70 dark:bg-emerald-950/50 dark:text-emerald-300">
-              <span className="relative flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-              </span>
-              Synced
-            </div>
-
-            <div className="pointer-events-none absolute inset-0 opacity-70">
-              <div className={`absolute left-8 top-16 h-20 w-20 rounded-full blur-2xl ${theme === 'dark' ? 'bg-emerald-900/30' : 'bg-emerald-100'}`} />
-              <div className={`absolute bottom-8 right-8 h-24 w-24 rounded-full blur-2xl ${theme === 'dark' ? 'bg-blue-900/30' : 'bg-blue-100'}`} />
-            </div>
-
-            <div className="relative h-full min-h-[300px] overflow-hidden rounded-lg">
-              {liveMessages.map((message, index) => (
-                <div
-                  key={message}
-                  className={combine(
-                    'dashboard-slide-message absolute left-0 top-0 max-w-[92%] whitespace-nowrap rounded-full border px-4 py-2 text-xs font-semibold shadow-sm sm:text-sm',
-                    theme === 'dark'
-                      ? 'border-gray-700 bg-gray-950/85 text-gray-100'
-                      : 'border-slate-200 bg-white/95 text-slate-800'
-                  )}
-                  style={{
-                    animationDelay: `${index * 2.2}s`,
-                    animationDuration: `${9.5 + index * 0.6}s`,
-                  }}
-                >
-                  {message}
-                </div>
-              ))}
-            </div>
-          </aside>
+          <Users className="h-7 w-7 shrink-0 text-blue-700" />
         </div>
+      </div>
+
+      <div
+        className={combine(
+          "rounded-xl border p-5 shadow-sm transition hover:shadow-md",
+          theme === "dark" ? "bg-gray-900/70" : "bg-white",
+          get("border", "primary")
+        )}
+      >
+        <div className="flex min-h-[92px] items-center justify-between gap-3">
+          <div>
+            <p className={`text-xs font-semibold uppercase ${get("text", "tertiary")}`}>
+              Academic Year
+            </p>
+
+            <p className={`mt-1 text-xl font-bold ${get("text", "primary")}`}>
+              {stats?.meta?.academic_year || "N/A"}
+            </p>
+
+            <p className={`mt-1 text-xs ${get("text", "secondary")}`}>
+              {stats.meta.time_periods.daily}
+            </p>
+          </div>
+
+          <GraduationCap className="h-7 w-7 shrink-0 text-purple-700" />
+        </div>
+      </div>
+    </div>
+
+    <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+      <div>
+        <h2 className={`text-xl font-bold sm:text-2xl ${get("text", "primary")}`}>
+          Attendance
+        </h2>
+
+        <p className={`mt-1 text-xs sm:text-sm ${get("text", "secondary")}`}>
+          Daily presence and academic readiness for {selectedSchoolName}
+        </p>
+      </div>
+
+      <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto lg:items-center lg:justify-end">
+        {schoolOptions.length > 1 && (
+          <label
+            className={`flex min-h-11 w-full items-center gap-2 rounded-xl border px-3 py-2 shadow-sm sm:min-w-[260px] lg:w-[320px] ${
+              theme === "dark"
+                ? "border-gray-700 bg-gray-900 text-gray-100"
+                : "border-slate-200 bg-white text-slate-700"
+            }`}
+          >
+            <School className="h-4 w-4 shrink-0 text-blue-600" />
+
+            <select
+              value={selectedSchoolId === "__refresh__" ? "all" : selectedSchoolId}
+              onChange={(event) => setSelectedSchoolId(event.target.value)}
+              className={`w-full bg-transparent text-sm font-medium outline-none ${get(
+                "text",
+                "primary"
+              )}`}
+            >
+              <option value="all">All Schools</option>
+
+              {schoolOptions.map((school) => (
+                <option key={school.id} value={school.id}>
+                  {school.name}
+                  {school.code ? ` (${school.code})` : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
+        <button
+          type="button"
+          onClick={() => router.push("/admin/students/attendance")}
+          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border shadow-sm transition ${
+            theme === "dark"
+              ? "border-gray-700 bg-gray-900 text-gray-100 hover:bg-gray-800"
+              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+          }`}
+          title="Attendance history"
+          aria-label="Attendance history"
+        >
+          <History className="h-5 w-5" />
+        </button>
+      </div>
+    </div>
+
+    <div className="grid w-full grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <StatCard
+        title="Students"
+        value={totalStudentsAttendance}
+        icon={UserCheck}
+        color={presentAttendancePercentage >= 80 ? "green" : "orange"}
+        subtitle={`${totalPresentStudents}/${totalStudents} present today`}
+      />
+
+      <StatCard
+        title="Teachers"
+        value={stats.teachers.total}
+        icon={GraduationCap}
+        color="purple"
+        subtitle={`${stats.teachers.today.present} present today`}
+      />
+
+      <StatCard
+        title="Staff"
+        value={stats.staff.total}
+        icon={Briefcase}
+        color="indigo"
+        subtitle={`${stats.staff.today.present} present today`}
+      />
+    </div>
+  </div>
+</div>
 
         <div className="block">
           <div className="grid grid-cols-1 2xl:grid-cols-3 gap-4 sm:gap-6">
@@ -1073,7 +1107,7 @@ export const MainContent = () => {
                 </div>
               </div>
 
-              <div className="mt-4 sm:mt-6">
+              <div className="mb-4 sm:mt-6">
                 <div className={getCardGradientClass('orange')}>
                   <div className="flex justify-between items-center mb-3 sm:mb-4">
                     <div className="flex items-center gap-3">
@@ -1102,12 +1136,7 @@ export const MainContent = () => {
                 </div>
               </div>
 
-
-            </div>
-
-            {/* Right Column - Charts and Additional Data */}
-            <div className="2xl:col-span-2 space-y-4 sm:space-y-6">
-              <div className={combine(getCardGradientClass('purple'), 'flex min-h-[360px] flex-col p-4 sm:p-5 lg:min-h-[400px]')}>
+              <div className={combine(getCardGradientClass('purple'), 'flex min-h-[360px] flex-col p-4 sm:p-5 lg:min-h-[500px]')}>
                 <div className="mb-3 flex items-center justify-between gap-3 sm:mb-4">
                   <div className="flex min-w-0 items-center gap-3">
                     <div className={`shrink-0 rounded-lg bg-gradient-to-br p-1.5 sm:p-2 ${theme === 'dark' ? 'from-purple-900/30 to-purple-800/30' : 'from-purple-50 to-purple-100'}`}>
@@ -1135,6 +1164,14 @@ export const MainContent = () => {
                   />
                 </div>
               </div>
+
+
+
+            </div>
+
+            {/* Right Column - Charts and Additional Data */}
+            <div className="2xl:col-span-2 space-y-4 sm:space-y-6">
+              
 
               {/* Attendance Overview Chart with Full Screen Button */}
               <div className={combine(getCardGradientClass('indigo'), 'w-full min-h-[380px] sm:min-h-[460px] lg:min-h-[500px] xl:min-h-[560px]')}>
