@@ -10,10 +10,7 @@ const ENABLE_ENCRYPTION =
   process.env.NEXT_PUBLIC_ENABLE_ENCRYPTION?.toLowerCase() === 'true';
 
 
-export const backend_api =
-  process.env.NEXT_PUBLIC_BACKEND_API ||
-  process.env.NEXT_PUBLIC_API_URL ||
-  'http://10.21.72.71:8000';
+export const backend_api = 'https:macid.pythonanywhere.com';
 const API_BASE_HTTP = `${backend_api.replace(/\/+$/, '')}/api/`;
 
 
