@@ -11,7 +11,7 @@ const ENABLE_ENCRYPTION =
 
 
 export const backend_api = 'https:macid.pythonanywhere.com';
-const API_BASE_HTTP = `${backend_api.replace(/\/+$/, '')}/api/`;
+const API_BASE_HTTP = 'https://macid.pythonanywhere.com/api/';
 
 
 declare module 'axios' {
