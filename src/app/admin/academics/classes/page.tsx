@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import { adminApi } from '@/lib/api';
-import { toastSuccess, toastError, toastInfo, toastWarning } from '@/lib/toast';
+import { toastSuccess, toastError, toastInfo } from '@/lib/toast';
 import {
   Plus,
   Trash2,
@@ -67,12 +67,65 @@ interface ClassTeacherAssignment {
   teacher_id: string;
 }
 
-// Helper to parse teacher assignment
-interface TeacherAssignment {
-  teacher: Teacher;
-  className: string;
-  sectionName: string;
-}
+type LoadingKey = 'standards' | 'sections' | 'teachers';
+type SubmitKey = 'standard' | 'bulkStandards' | 'section' | 'bulkSections' | 'classTeacher';
+
+const getErrorMessage = (error: any, fallback: string) => {
+  const data = error?.response?.data;
+  if (typeof data === 'string') return data;
+  if (data?.detail) return data.detail;
+  if (data?.error) return data.error;
+  if (data?.message) return data.message;
+  if (data && typeof data === 'object') {
+    const firstValue = Object.values(data)[0];
+    if (Array.isArray(firstValue)) return firstValue.join(', ');
+    if (typeof firstValue === 'string') return firstValue;
+  }
+  return fallback;
+};
+
+const unwrapArray = <T,>(payload: any, keys: string[] = []): T[] => {
+  if (Array.isArray(payload)) return payload;
+  for (const key of keys) {
+    if (Array.isArray(payload?.[key])) return payload[key];
+  }
+  if (Array.isArray(payload?.results)) return payload.results;
+  if (Array.isArray(payload?.data)) return payload.data;
+  return [];
+};
+
+const normalizeStandard = (standard: any): Standard => ({
+  id: Number(standard.id),
+  name: String(standard.name ?? standard.class_name ?? ''),
+  description: String(standard.description ?? ''),
+  sections: unwrapArray<Section>(standard.sections).map(normalizeSection),
+});
+
+const normalizeSection = (section: any): Section => ({
+  id: Number(section.id),
+  name: String(section.name ?? section.section_name ?? ''),
+  standard: Number(section.standard ?? section.standard_id ?? 0),
+  standard_name: String(section.standard_name ?? section.class_name ?? section.standard?.name ?? ''),
+  class_teacher: section.class_teacher ?? undefined,
+});
+
+const normalizeTeacher = (teacher: any): Teacher => ({
+  ...teacher,
+  id: Number(teacher.id),
+  teacher_id: String(teacher.teacher_id ?? ''),
+  name: String(teacher.name ?? ''),
+  email: String(teacher.email ?? ''),
+  phone: String(teacher.phone ?? ''),
+  date_of_birth: String(teacher.date_of_birth ?? ''),
+  joining_date: teacher.joining_date ?? null,
+  qualification: String(teacher.qualification ?? ''),
+  department: String(teacher.department ?? ''),
+  address: String(teacher.address ?? ''),
+  user: Number(teacher.user ?? 0),
+  assigned_class: String(teacher.assigned_class ?? 'Not Assigned'),
+  section_name: teacher.section_name ?? null,
+  class_name: teacher.class_name ?? null,
+});
 
 export default function ClassesSectionsManager() {
   const { theme } = useTheme();
@@ -82,12 +135,23 @@ export default function ClassesSectionsManager() {
   const [standards, setStandards] = useState<Standard[]>([]);
   const [sections, setSections] = useState<Section[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
-  const [teacherMap, setTeacherMap] = useState<Record<number, Teacher>>({});
   const [sectionTeacherMap, setSectionTeacherMap] = useState<Record<string, Teacher>>({});
   const [loading, setLoading] = useState({
     standards: true,
     sections: true,
     teachers: true
+  });
+  const [submitting, setSubmitting] = useState<Record<SubmitKey, boolean>>({
+    standard: false,
+    bulkStandards: false,
+    section: false,
+    bulkSections: false,
+    classTeacher: false,
+  });
+  const [loadErrors, setLoadErrors] = useState<Record<LoadingKey, string | null>>({
+    standards: null,
+    sections: null,
+    teachers: null,
   });
 
   const [activeTab, setActiveTab] = useState<'classes' | 'sections' | 'bulk'>('classes');
@@ -264,6 +328,14 @@ export default function ClassesSectionsManager() {
   };
 
   // Build section to teacher mapping from teachers data
+  const setLoadingKey = (key: LoadingKey, value: boolean) => {
+    setLoading(prev => ({ ...prev, [key]: value }));
+  };
+
+  const setSubmitKey = (key: SubmitKey, value: boolean) => {
+    setSubmitting(prev => ({ ...prev, [key]: value }));
+  };
+
   const buildSectionTeacherMap = (teachersList: Teacher[]) => {
     const map: Record<string, Teacher> = {};
     teachersList.forEach(teacher => {
@@ -278,54 +350,61 @@ export default function ClassesSectionsManager() {
   // Fetch all data
   useEffect(() => {
     setLoading({ standards: true, sections: true, teachers: true });
-    fetchStandards();
-    fetchSections();
-    fetchTeachers();
+    setLoadErrors({ standards: null, sections: null, teachers: null });
+    void Promise.all([fetchStandards(), fetchSections(), fetchTeachers()]);
   }, [schoolScope.selectedSchoolId]);
 
   const fetchStandards = async () => {
+    setLoadingKey('standards', true);
+    setLoadErrors(prev => ({ ...prev, standards: null }));
     try {
       const response = await adminApi.academics.standards(schoolScope.scopeParams);
-      setStandards(response.data);
+      setStandards(unwrapArray<any>(response.data, ['standards']).map(normalizeStandard));
     } catch (error) {
-      console.log(error);
+      const message = getErrorMessage(error, 'Failed to load classes');
+      setStandards([]);
+      setLoadErrors(prev => ({ ...prev, standards: message }));
+      toastError(message);
     } finally {
-      setLoading(prev => ({ ...prev, standards: false }));
+      setLoadingKey('standards', false);
     }
   };
 
   const fetchSections = async (standardId?: string) => {
+    setLoadingKey('sections', true);
+    setLoadErrors(prev => ({ ...prev, sections: null }));
     try {
       const response = standardId
         ? await adminApi.academics.sections(standardId, schoolScope.scopeParams)
         : await adminApi.academics.allSections(schoolScope.scopeParams);
-      setSections(response.data);
+      setSections(unwrapArray<any>(response.data, ['sections']).map(normalizeSection));
     } catch (error) {
-      console.log(error);
+      const message = getErrorMessage(error, 'Failed to load sections');
+      setSections([]);
+      setLoadErrors(prev => ({ ...prev, sections: message }));
+      toastError(message);
     } finally {
-      setLoading(prev => ({ ...prev, sections: false }));
+      setLoadingKey('sections', false);
     }
   };
 
   const fetchTeachers = async () => {
+    setLoadingKey('teachers', true);
+    setLoadErrors(prev => ({ ...prev, teachers: null }));
     try {
       const response = await adminApi.teachers.list(schoolScope.scopeParams);
-      const data = response.data;
-      const teachersArray = data.teachers || data;
+      const teachersArray = unwrapArray<any>(response.data, ['teachers']).map(normalizeTeacher);
       setTeachers(teachersArray);
 
-      const map: Record<number, Teacher> = {};
-      teachersArray.forEach((teacher: Teacher) => {
-        map[teacher.id] = teacher;
-      });
-      setTeacherMap(map);
-      
-      // Build section to teacher mapping
       buildSectionTeacherMap(teachersArray);
     } catch (error) {
-      console.log(error);
+      const message = getErrorMessage(error, 'Failed to load teachers');
+      setTeachers([]);
+      setSectionTeacherMap({});
+      setLoadErrors(prev => ({ ...prev, teachers: message }));
+      toastError(message);
     } finally {
-      setLoading(prev => ({ ...prev, teachers: false }));
+      setLoadingKey('teachers', false);
     }
   };
 
@@ -335,6 +414,7 @@ export default function ClassesSectionsManager() {
       return;
     }
 
+    setSubmitKey('standard', true);
     try {
       await adminApi.academics.createStandard({
         name: newStandard.trim(),
@@ -343,9 +423,11 @@ export default function ClassesSectionsManager() {
       });
       toastSuccess('Class created successfully');
       setNewStandard('');
-      fetchStandards();
+      await Promise.all([fetchStandards(), fetchSections()]);
     } catch (error: any) {
-      toastError(error?.response?.data?.detail || 'Failed to create class');
+      toastError(getErrorMessage(error, 'Failed to create class'));
+    } finally {
+      setSubmitKey('standard', false);
     }
   };
 
@@ -355,15 +437,18 @@ export default function ClassesSectionsManager() {
       return;
     }
 
+    setSubmitKey('bulkStandards', true);
     try {
       const standardsArray = newStandard.split(',').map(s => s.trim()).filter(s => s);
       const response = await adminApi.academics.bulkCreateStandards(standardsArray, schoolScope.scopeParams);
       const result = response.data;
-      toastSuccess(`Created ${result.created_count} classes successfully`);
+      toastSuccess(`Created ${result.created_count ?? 0} classes successfully`);
       setNewStandard('');
-      fetchStandards();
+      await fetchStandards();
     } catch (error: any) {
-      toastError(error?.response?.data?.error || 'Failed to create classes');
+      toastError(getErrorMessage(error, 'Failed to create classes'));
+    } finally {
+      setSubmitKey('bulkStandards', false);
     }
   };
 
@@ -373,6 +458,7 @@ export default function ClassesSectionsManager() {
       return;
     }
 
+    setSubmitKey('section', true);
     try {
       await adminApi.academics.createSection({
         class_name: sectionData.class_name,
@@ -382,10 +468,11 @@ export default function ClassesSectionsManager() {
       toastSuccess('Section created successfully');
       setSectionData({ class_name: '', section_name: '', description: '' });
       setShowAddSection(false);
-      fetchSections();
-      fetchStandards();
+      await Promise.all([fetchSections(selectedStandard || undefined), fetchStandards()]);
     } catch (error: any) {
-      toastError(error?.response?.data?.error || 'Failed to create section');
+      toastError(getErrorMessage(error, 'Failed to create section'));
+    } finally {
+      setSubmitKey('section', false);
     }
   };
 
@@ -399,15 +486,17 @@ export default function ClassesSectionsManager() {
       return;
     }
 
+    setSubmitKey('bulkSections', true);
     try {
       const response = await adminApi.academics.bulkMapSections(validMappings, schoolScope.scopeParams);
       const result = response.data;
-      toastSuccess(`Created ${result.total_new_sections} new sections`);
+      toastSuccess(`Created ${result.total_new_sections ?? 0} new sections`);
       setNewSections([{ class_name: '', sections: [] }]);
-      fetchSections();
-      fetchStandards();
+      await Promise.all([fetchSections(selectedStandard || undefined), fetchStandards()]);
     } catch (error: any) {
-      toastError(error?.response?.data?.error || 'Failed to assign sections');
+      toastError(getErrorMessage(error, 'Failed to assign sections'));
+    } finally {
+      setSubmitKey('bulkSections', false);
     }
   };
 
@@ -417,6 +506,7 @@ export default function ClassesSectionsManager() {
       return;
     }
 
+    setSubmitKey('classTeacher', true);
     try {
       await adminApi.teachers.assignClassTeacher({
         teacher_id: classTeacherData.teacher_id,
@@ -428,13 +518,15 @@ export default function ClassesSectionsManager() {
       setClassTeacherData({ class_name: '', section_name: '', teacher_id: '' });
       setShowAssignTeacher(false);
       
-      // Refresh teachers to get updated assignments
-      fetchTeachers();
-      // Also refresh sections to update any local state
-      fetchSections();
-      fetchStandards();
+      await Promise.all([
+        fetchTeachers(),
+        fetchSections(selectedStandard || undefined),
+        fetchStandards(),
+      ]);
     } catch (error: any) {
-      toastError(error?.response?.data?.error || 'Failed to assign class teacher');
+      toastError(getErrorMessage(error, 'Failed to assign class teacher'));
+    } finally {
+      setSubmitKey('classTeacher', false);
     }
   };
 
@@ -473,7 +565,7 @@ export default function ClassesSectionsManager() {
 
   const handleStandardFilter = (standardId: string) => {
     setSelectedStandard(standardId);
-    fetchSections(standardId || undefined);
+    void fetchSections(standardId || undefined);
   };
 
   const handleAddSectionFromClassTab = () => {
@@ -591,6 +683,34 @@ export default function ClassesSectionsManager() {
               </div>
             </div>
           </div>
+
+          {(loadErrors.standards || loadErrors.sections || loadErrors.teachers) && (
+            <div className={combine(
+              "mb-6 rounded-xl border p-4 text-sm",
+              theme === 'dark'
+                ? "border-red-800 bg-red-950/30 text-red-200"
+                : "border-red-200 bg-red-50 text-red-700"
+            )}>
+              <div className="font-semibold">Some academic data could not be loaded.</div>
+              <div className="mt-1 space-y-1">
+                {loadErrors.standards && <div>Classes: {loadErrors.standards}</div>}
+                {loadErrors.sections && <div>Sections: {loadErrors.sections}</div>}
+                {loadErrors.teachers && <div>Teachers: {loadErrors.teachers}</div>}
+              </div>
+              <button
+                type="button"
+                onClick={() => void Promise.all([fetchStandards(), fetchSections(selectedStandard || undefined), fetchTeachers()])}
+                className={combine(
+                  "mt-3 rounded-lg px-3 py-2 text-xs font-semibold transition-colors",
+                  theme === 'dark'
+                    ? "bg-red-900/40 text-red-100 hover:bg-red-900/60"
+                    : "bg-red-100 text-red-700 hover:bg-red-200"
+                )}
+              >
+                Retry
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Main Content */}
@@ -642,10 +762,11 @@ export default function ClassesSectionsManager() {
                     />
                     <button
                       onClick={handleCreateStandard}
+                      disabled={submitting.standard || !newStandard.trim()}
                       className={combine(getPrimaryButtonClass(), "w-full md:w-auto flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98]")}
                     >
                       <Plus className="h-4 w-4" />
-                      Add Single Class
+                      {submitting.standard ? 'Adding...' : 'Add Single Class'}
                     </button>
                   </div>
                 </div>
@@ -941,7 +1062,7 @@ export default function ClassesSectionsManager() {
                       <div className="flex items-end">
                         <button
                           onClick={handleCreateSection}
-                          disabled={!sectionData.class_name || !sectionData.section_name}
+                          disabled={submitting.section || !sectionData.class_name || !sectionData.section_name}
                           className={combine(
                             "w-full px-6 py-3 rounded-xl transition-all duration-200 font-medium flex items-center justify-center gap-2",
                             theme === 'dark'
@@ -951,7 +1072,7 @@ export default function ClassesSectionsManager() {
                           )}
                         >
                           <Check className="h-4 w-4" />
-                          Create Section
+                          {submitting.section ? 'Creating...' : 'Create Section'}
                         </button>
                       </div>
                     </div>
@@ -1037,7 +1158,7 @@ export default function ClassesSectionsManager() {
                       <div className="flex items-end">
                         <button
                           onClick={handleAssignClassTeacher}
-                          disabled={!classTeacherData.class_name || !classTeacherData.section_name || !classTeacherData.teacher_id}
+                          disabled={submitting.classTeacher || !classTeacherData.class_name || !classTeacherData.section_name || !classTeacherData.teacher_id}
                           className={combine(
                             "w-full px-6 py-3 rounded-xl transition-all duration-200 font-medium flex items-center justify-center gap-2",
                             theme === 'dark'
@@ -1047,7 +1168,7 @@ export default function ClassesSectionsManager() {
                           )}
                         >
                           <Check className="h-4 w-4" />
-                          Assign Teacher
+                          {submitting.classTeacher ? 'Assigning...' : 'Assign Teacher'}
                         </button>
                       </div>
                     </div>
@@ -1278,7 +1399,7 @@ export default function ClassesSectionsManager() {
                     </div>
                     <button
                       onClick={handleBulkCreateStandards}
-                      disabled={!newStandard.trim()}
+                      disabled={submitting.bulkStandards || !newStandard.trim()}
                       className={combine(
                         "px-6 py-3 rounded-xl transition-all duration-200 font-medium flex items-center justify-center gap-2",
                         theme === 'dark'
@@ -1288,7 +1409,7 @@ export default function ClassesSectionsManager() {
                       )}
                     >
                       <Plus className="h-4 w-4" />
-                      Create Multiple Classes
+                      {submitting.bulkStandards ? 'Creating...' : 'Create Multiple Classes'}
                     </button>
                     <p className={combine("text-sm", get('text', 'tertiary'))}>
                       Creates multiple classes at once. Existing classes will be skipped.
@@ -1472,16 +1593,17 @@ A, B, C, D"
                       </button>
                       <button
                         onClick={handleBulkAssignSections}
+                        disabled={submitting.bulkSections}
                         className={combine(
                           "px-6 py-2 rounded-xl transition-all duration-200 font-medium flex items-center gap-2",
                           theme === 'dark'
                             ? 'bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white'
                             : 'bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white',
-                          "hover:scale-[1.02] active:scale-[0.98]"
+                          "hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
                         )}
                       >
                         <Check className="h-4 w-4" />
-                        Assign All Sections
+                        {submitting.bulkSections ? 'Assigning...' : 'Assign All Sections'}
                       </button>
                     </div>
                   </div>

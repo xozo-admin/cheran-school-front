@@ -24,7 +24,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { useThemeClasses } from '@/hooks/useThemeClasses';
 import { toastSuccess, toastError, toastInfo } from '@/lib/toast';
 import { studentApi } from '@/lib/api';
-import { clearAllCookies } from '@/lib/auth';
+import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 
 interface StudentProfile {
@@ -60,6 +60,7 @@ interface SearchSuggestion {
 
 export const StudentHeader = ({ onMenuClick }: StudentHeaderProps) => {
   const router = useRouter();
+  const { logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const { get, combine } = useThemeClasses();
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -207,12 +208,10 @@ export const StudentHeader = ({ onMenuClick }: StudentHeaderProps) => {
   };
 
   const handleLogout = () => {
-    clearAllCookies();
-
     toastSuccess('Logged out successfully!');
 
     setTimeout(() => {
-      router.push('/');
+      logout();
     }, 800);
   };
 

@@ -115,6 +115,119 @@ interface AcademicYearOption {
   is_current: boolean;
 }
 
+interface StudentUploadResult {
+  message: string;
+  summary: {
+    profiles_created: number;
+    profiles_updated: number;
+    enrolled_in_year: number;
+    teachers: number;
+    staff: number;
+  };
+  errors: string[];
+}
+
+interface ImageUploadResult {
+  message: string;
+  success_count: number;
+  failed_count: number;
+  errors: string[];
+}
+
+const emptyStudentForm = {
+  student_id: "",
+  student_name: "",
+  student_email: "",
+  father_name: "",
+  mother_name: "",
+  father_phone: "",
+  mother_phone: "",
+  date_of_birth: "",
+  date_of_admission: "",
+  gender: "Male",
+  accommodation: "",
+  class_name: "",
+  section: "",
+  address: "",
+};
+
+const getApiErrorMessage = (error: any, fallback: string) => {
+  const data = error?.response?.data;
+  if (typeof data === "string") return data;
+  if (data?.detail) return data.detail;
+  if (data?.error) return data.error;
+  if (data?.message) return data.message;
+  if (data && typeof data === "object") {
+    const firstValue = Object.values(data)[0];
+    if (Array.isArray(firstValue)) return firstValue.join(", ");
+    if (typeof firstValue === "string") return firstValue;
+  }
+  return fallback;
+};
+
+const unwrapArray = <T,>(payload: any, keys: string[] = []): T[] => {
+  if (Array.isArray(payload)) return payload;
+  for (const key of keys) {
+    if (Array.isArray(payload?.[key])) return payload[key];
+  }
+  if (Array.isArray(payload?.results)) return payload.results;
+  if (Array.isArray(payload?.data)) return payload.data;
+  return [];
+};
+
+const normalizeSection = (section: any): Section => ({
+  id: Number(section?.id),
+  name: String(section?.name ?? section?.section_name ?? ""),
+  standard: Number(section?.standard ?? section?.standard_id ?? 0),
+  standard_name: String(
+    section?.standard_name ?? section?.class_name ?? section?.standard?.name ?? "",
+  ),
+});
+
+const normalizeStandard = (standard: any): Standard => ({
+  id: Number(standard?.id),
+  name: String(standard?.name ?? standard?.class_name ?? ""),
+  description: String(standard?.description ?? ""),
+  sections: unwrapArray<any>(standard?.sections).map(normalizeSection),
+});
+
+const normalizeStudent = (student: any): Student => ({
+  student_id: String(student?.student_id ?? ""),
+  student_name: String(student?.student_name ?? ""),
+  student_email: student?.student_email ?? null,
+  father_name: String(student?.father_name ?? ""),
+  mother_name: String(student?.mother_name ?? ""),
+  gender: String(student?.gender ?? ""),
+  accommodation: student?.accommodation ?? null,
+  date_of_birth: student?.date_of_birth ?? null,
+  father_phone: student?.father_phone ?? null,
+  mother_phone: student?.mother_phone ?? null,
+  class_name: student?.class_name ?? null,
+  section: student?.section === "N/A" ? null : student?.section ?? null,
+  address: student?.address ?? null,
+  date_of_admission: student?.date_of_admission ?? "",
+  standard: student?.standard,
+});
+
+const normalizeStudentUploadResult = (payload: any): StudentUploadResult => ({
+  message: String(payload?.message ?? "Bulk upload processed."),
+  summary: {
+    profiles_created: Number(payload?.summary?.profiles_created ?? 0),
+    profiles_updated: Number(payload?.summary?.profiles_updated ?? 0),
+    enrolled_in_year: Number(payload?.summary?.enrolled_in_year ?? 0),
+    teachers: Number(payload?.summary?.teachers ?? 0),
+    staff: Number(payload?.summary?.staff ?? 0),
+  },
+  errors: Array.isArray(payload?.errors) ? payload.errors.map(String) : [],
+});
+
+const normalizeImageUploadResult = (payload: any): ImageUploadResult => ({
+  message: String(payload?.message ?? "Bulk image upload processed."),
+  success_count: Number(payload?.success_count ?? 0),
+  failed_count: Number(payload?.failed_count ?? 0),
+  errors: Array.isArray(payload?.errors) ? payload.errors.map(String) : [],
+});
+
 export default function AllStudentsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -152,6 +265,12 @@ export default function AllStudentsPage() {
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [imagesZipFile, setImagesZipFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadingStudents, setUploadingStudents] = useState(false);
+  const [uploadingImages, setUploadingImages] = useState(false);
+  const [studentUploadResult, setStudentUploadResult] =
+    useState<StudentUploadResult | null>(null);
+  const [imageUploadResult, setImageUploadResult] =
+    useState<ImageUploadResult | null>(null);
   const [standards, setStandards] = useState<Standard[]>([]);
   const [academicYears, setAcademicYears] = useState<AcademicYearOption[]>([]);
   const [sectionsLoading, setSectionsLoading] = useState(false);
@@ -165,22 +284,7 @@ export default function AllStudentsPage() {
   const [availableSections, setAvailableSections] = useState<string[]>([]);
   const schoolScope = useSchoolScope({ storageKey: "allstudents_school_scope" });
 
-  const [formData, setFormData] = useState({
-    student_id: "",
-    student_name: "",
-    student_email: "",
-    father_name: "",
-    mother_name: "",
-    father_phone: "",
-    mother_phone: "",
-    date_of_birth: "",
-    date_of_admission: "",
-    gender: "Male",
-    accommodation: "",
-    class_name: "",
-    section: "",
-    address: "",
-  });
+  const [formData, setFormData] = useState(emptyStudentForm);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   // Responsive layout intentionally disabled for this page.
@@ -355,11 +459,12 @@ export default function AllStudentsPage() {
     setSectionsLoading(true);
     try {
       const res = await adminApi.academics.standards(schoolScope.scopeParams);
-      const rows = Array.isArray(res?.data) ? res.data : [];
+      const rows = unwrapArray<any>(res?.data, ["standards"]).map(normalizeStandard);
       setStandards(rows);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching classes and sections:", error);
       setStandards([]);
+      toastError(getApiErrorMessage(error, "Failed to load classes and sections"));
     } finally {
       setSectionsLoading(false);
     }
@@ -369,7 +474,7 @@ export default function AllStudentsPage() {
     setAcademicYearsLoading(true);
     try {
       const res = await adminApi.school.academicYears(schoolScope.scopeParams);
-      const rows = Array.isArray(res?.data) ? res.data : [];
+      const rows = unwrapArray<any>(res?.data, ["academic_years", "years"]);
       const normalized: AcademicYearOption[] = rows
         .map((item: any) => ({
           id: Number(item?.id),
@@ -388,10 +493,11 @@ export default function AllStudentsPage() {
       } else {
         setFilterAcademicYear("");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching academic years:", error);
       setAcademicYears([]);
       setFilterAcademicYear("");
+      toastError(getApiErrorMessage(error, "Failed to load academic years"));
     } finally {
       setAcademicYearsLoading(false);
     }
@@ -433,14 +539,20 @@ export default function AllStudentsPage() {
         params.assignment_status = filterAssignmentStatus;
 
       const res = await adminApi.students.listPaginated(params);
-      const data = (res.data || {}) as PaginatedStudentsResponse;
-      const studentResults = Array.isArray(data.results) ? data.results : [];
+      const rawData = res.data || {};
+      const data = rawData as PaginatedStudentsResponse | Student[];
+      const studentResults = unwrapArray<any>(data).map(normalizeStudent);
       setStudents(studentResults);
-      setTotalStudentsCount(typeof data.count === "number" ? data.count : 0);
-    } catch (error) {
+      setTotalStudentsCount(
+        !Array.isArray(data) && typeof data.count === "number"
+          ? data.count
+          : studentResults.length,
+      );
+    } catch (error: any) {
       console.error("Error fetching students:", error);
       setStudents([]);
       setTotalStudentsCount(0);
+      toastError(getApiErrorMessage(error, "Failed to load students"));
     } finally {
       setLoading(false);
       setStatsLoading(false);
@@ -486,7 +598,7 @@ export default function AllStudentsPage() {
 
         const res = await adminApi.students.listPaginated(params);
         const data = (res.data || {}) as PaginatedStudentsResponse;
-        const pageResults = Array.isArray(data.results) ? data.results : [];
+        const pageResults = unwrapArray<any>(data).map(normalizeStudent);
         allStudents.push(...pageResults);
         hasMore = !!data.next;
         page += 1;
@@ -497,7 +609,7 @@ export default function AllStudentsPage() {
         female: allStudents.filter((s) => s.gender === "Female").length,
       });
       calculateClassStats(allStudents);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching gender stats:", error);
       setGenderStats({ male: 0, female: 0 });
       setClassStats([]);
@@ -636,7 +748,7 @@ export default function AllStudentsPage() {
     setShowDeleteConfirm(null);
 
     try {
-      await adminApi.students.delete(id);
+      await adminApi.students.delete(id, schoolScope.scopeParams);
 
       setStudents((prev) => prev.filter((s) => s.student_id !== id));
       toastSuccess("Student deleted successfully!");
@@ -712,8 +824,16 @@ export default function AllStudentsPage() {
     >,
   ) => {
     const { name, value } = e.target;
-    setFormData({ ...formData, [name]: value });
-    setFormErrors((prev) => ({ ...prev, [name]: "" }));
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value,
+      ...(name === "class_name" ? { section: "" } : {}),
+    }));
+    setFormErrors((prev) => ({
+      ...prev,
+      [name]: "",
+      ...(name === "class_name" ? { section: "" } : {}),
+    }));
   };
 
   const parseApiErrors = (error: any): Record<string, string> => {
@@ -751,8 +871,6 @@ export default function AllStudentsPage() {
       nextErrors.student_id = "Student ID is required.";
     if (!formData.student_name.trim())
       nextErrors.student_name = "Student name is required.";
-    if (!formData.student_email.trim())
-      nextErrors.student_email = "Email is required.";
     if (
       formData.student_email.trim() &&
       !isValidEmail(formData.student_email)
@@ -787,6 +905,17 @@ export default function AllStudentsPage() {
     if (formData.section.trim() && !formData.class_name.trim()) {
       nextErrors.class_name = "Class is required when section is selected.";
     }
+    if (formData.section.trim() && formData.class_name.trim()) {
+      const selectedStandard = standards.find(
+        (std) => std.name === formData.class_name,
+      );
+      const sectionExists = selectedStandard?.sections?.some(
+        (section) => section.name === formData.section,
+      );
+      if (!sectionExists) {
+        nextErrors.section = `Section '${formData.section}' does not exist in Class '${formData.class_name}'.`;
+      }
+    }
 
     setFormErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
@@ -804,7 +933,7 @@ export default function AllStudentsPage() {
     const payload: Record<string, string | null> = {
       student_id: formData.student_id.trim(),
       student_name: formData.student_name.trim(),
-      student_email: formData.student_email.trim(),
+      student_email: formData.student_email.trim() || null,
       father_name: formData.father_name.trim(),
       mother_name: formData.mother_name.trim(),
       father_phone: formData.father_phone.trim(),
@@ -815,34 +944,25 @@ export default function AllStudentsPage() {
     if (formData.accommodation) payload.accommodation = formData.accommodation;
     if (formData.date_of_admission)
       payload.date_of_admission = formData.date_of_admission;
-    if (formData.class_name) payload.class_name = formData.class_name;
-    if (formData.section) payload.section = formData.section;
+    if (mode === "edit" || formData.class_name) {
+      payload.class_name = formData.class_name || null;
+      payload.section = formData.class_name ? formData.section || null : null;
+    }
     if (formData.address.trim()) payload.address = formData.address.trim();
 
     try {
       if (mode === "edit" && editId) {
-        await adminApi.students.update(editId, payload);
+        await adminApi.students.update(editId, payload, schoolScope.scopeParams);
       } else {
-        await adminApi.students.create(payload);
+        await adminApi.students.create(payload, schoolScope.scopeParams);
       }
-      fetchStudents(currentPage);
+      await Promise.all([
+        fetchStudents(currentPage),
+        fetchGenderStats(),
+        fetchClassesAndSections(),
+      ]);
       setMode("list");
-      setFormData({
-        student_id: "",
-        student_name: "",
-        student_email: "",
-        father_name: "",
-        mother_name: "",
-        father_phone: "",
-        mother_phone: "",
-        date_of_birth: "",
-        date_of_admission: "",
-        gender: "Male",
-        accommodation: "",
-        class_name: "",
-        section: "",
-        address: "",
-      });
+      setFormData(emptyStudentForm);
       setFormErrors({});
 
       const successMsg =
@@ -875,18 +995,47 @@ export default function AllStudentsPage() {
     }
 
     setUploadProgress(0);
+    setUploadingStudents(true);
+    setStudentUploadResult(null);
 
     try {
-      await adminApi.csv.uploadStudents(csvFile);
-      toastSuccess("Bulk upload completed successfully!");
-      fetchStudents(currentPage);
-      setBulkUploadMode(false);
+      setUploadProgress(35);
+      const response = await adminApi.csv.uploadStudents(csvFile, schoolScope.scopeParams);
+      const result = normalizeStudentUploadResult(response?.data);
+      setStudentUploadResult(result);
+
+      const totalChanged =
+        result.summary.profiles_created +
+        result.summary.profiles_updated +
+        result.summary.enrolled_in_year;
+
+      if (result.errors.length > 0) {
+        toastWarning(
+          `CSV processed with ${result.errors.length} row issue${result.errors.length === 1 ? "" : "s"}.`,
+        );
+      } else {
+        toastSuccess(
+          `CSV upload completed: ${totalChanged} student change${totalChanged === 1 ? "" : "s"}.`,
+        );
+      }
+
+      await Promise.all([
+        fetchStudents(currentPage),
+        fetchGenderStats(),
+        fetchClassesAndSections(),
+      ]);
       setCsvFile(null);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Upload error:", error);
-      toastError("Upload failed. Please try again.");
+      const message = getApiErrorMessage(error, "Upload failed. Please try again.");
+      const result = error?.response?.data
+        ? normalizeStudentUploadResult(error.response.data)
+        : null;
+      setStudentUploadResult(result);
+      toastError(message);
     } finally {
       setUploadProgress(100);
+      setUploadingStudents(false);
     }
   };
 
@@ -896,39 +1045,39 @@ export default function AllStudentsPage() {
       return;
     }
 
+    setUploadingImages(true);
+    setImageUploadResult(null);
+
     try {
       const response = await adminApi.csv.uploadProfileImagesZip(
         "student",
         imagesZipFile,
+        schoolScope.scopeParams,
       );
-      const data = response?.data || {};
-      const successCount = Number(data?.success_count || 0);
-      const failedCount = Number(data?.failed_count || 0);
-      const errors: string[] = Array.isArray(data?.errors) ? data.errors : [];
+      const result = normalizeImageUploadResult(response?.data);
+      setImageUploadResult(result);
 
-      if (failedCount === 0) {
+      if (result.failed_count === 0) {
         toastSuccess(
-          `Profile image upload completed. Updated ${successCount} students.`,
+          `Profile image upload completed. Updated ${result.success_count} students.`,
         );
       } else {
         toastWarning(
-          `Profile images processed: ${successCount} updated, ${failedCount} failed.`,
+          `Profile images processed: ${result.success_count} updated, ${result.failed_count} failed.`,
         );
-        if (errors.length > 0) {
-          const preview = errors.slice(0, 2).join(" | ");
+        if (result.errors.length > 0) {
+          const preview = result.errors.slice(0, 2).join(" | ");
           toastInfo(preview);
         }
       }
 
       setImagesZipFile(null);
-      fetchStudents(currentPage);
+      await fetchStudents(currentPage);
     } catch (error: any) {
       console.error("Image ZIP upload error:", error);
-      const apiError =
-        error?.response?.data?.error ||
-        error?.response?.data?.message ||
-        "Image ZIP upload failed. Please try again.";
-      toastError(apiError);
+      toastError(getApiErrorMessage(error, "Image ZIP upload failed. Please try again."));
+    } finally {
+      setUploadingImages(false);
     }
   };
 
@@ -945,7 +1094,7 @@ export default function AllStudentsPage() {
       "date_of_admission",
       "gender",
       "accommodation",
-      "class",
+      "class_name",
       "section",
       "address",
     ];
@@ -1073,7 +1222,7 @@ export default function AllStudentsPage() {
 
         const res = await adminApi.students.listPaginated(params);
         const data = (res.data || {}) as PaginatedStudentsResponse;
-        const pageResults = Array.isArray(data.results) ? data.results : [];
+        const pageResults = unwrapArray<any>(data).map(normalizeStudent);
         allStudents.push(...pageResults);
 
         hasMore = !!data.next;
@@ -1228,7 +1377,11 @@ export default function AllStudentsPage() {
                   </button>
 
                   <button
-                    onClick={() => setBulkUploadMode(!bulkUploadMode)}
+                    onClick={() => {
+                      setBulkUploadMode(!bulkUploadMode);
+                      setStudentUploadResult(null);
+                      setImageUploadResult(null);
+                    }}
                     className={combine(
                       getSecondaryButtonClass(),
                       "flex items-center space-x-2 shrink-0",
@@ -1242,6 +1395,7 @@ export default function AllStudentsPage() {
                     onClick={() => {
                       setFormErrors({});
                       setMode("add");
+                      setFormData(emptyStudentForm);
                     }}
                     className={combine(
                       getPrimaryButtonClass(),
@@ -1527,7 +1681,10 @@ export default function AllStudentsPage() {
                     <input
                       type="file"
                       accept=".csv"
-                      onChange={(e) => setCsvFile(e.target.files?.[0] || null)}
+                      onChange={(e) => {
+                        setCsvFile(e.target.files?.[0] || null);
+                        setStudentUploadResult(null);
+                      }}
                       className={getInputClass()}
                     />
                     <button
@@ -1545,7 +1702,7 @@ export default function AllStudentsPage() {
                     </button>
                     <button
                       onClick={handleBulkUpload}
-                      disabled={!csvFile}
+                      disabled={!csvFile || uploadingStudents}
                       className={combine(
                         "px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl transition-all duration-200 flex items-center justify-center space-x-1 sm:space-x-2 text-xs sm:text-sm",
                         theme === "dark"
@@ -1555,7 +1712,9 @@ export default function AllStudentsPage() {
                       )}
                     >
                       <FiDownload className="text-xs sm:text-sm" />
-                      <span className="text-xs sm:text-sm">Upload</span>
+                      <span className="text-xs sm:text-sm">
+                        {uploadingStudents ? "Uploading..." : "Upload"}
+                      </span>
                     </button>
                   </div>
                   {csvFile && (
@@ -1592,13 +1751,16 @@ export default function AllStudentsPage() {
                       type="file"
                       accept=".zip"
                       onChange={(e) =>
-                        setImagesZipFile(e.target.files?.[0] || null)
+                        {
+                          setImagesZipFile(e.target.files?.[0] || null);
+                          setImageUploadResult(null);
+                        }
                       }
                       className={getInputClass()}
                     />
                     <button
                       onClick={handleBulkImageUpload}
-                      disabled={!imagesZipFile}
+                      disabled={!imagesZipFile || uploadingImages}
                       className={combine(
                         "px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl transition-all duration-200 flex items-center justify-center space-x-1 sm:space-x-2 text-xs sm:text-sm",
                         theme === "dark"
@@ -1609,7 +1771,7 @@ export default function AllStudentsPage() {
                     >
                       <FiDownload className="text-xs sm:text-sm" />
                       <span className="text-xs sm:text-sm">
-                        Upload Images ZIP
+                        {uploadingImages ? "Uploading..." : "Upload Images ZIP"}
                       </span>
                     </button>
                   </div>
@@ -1665,6 +1827,71 @@ export default function AllStudentsPage() {
                   </div>
                 )}
 
+                {studentUploadResult && (
+                  <div
+                    className={combine(
+                      "mb-3 sm:mb-4 rounded-lg sm:rounded-xl border p-3 text-xs sm:text-sm",
+                      studentUploadResult.errors.length
+                        ? theme === "dark"
+                          ? "border-amber-800 bg-amber-950/30 text-amber-200"
+                          : "border-amber-200 bg-amber-50 text-amber-800"
+                        : theme === "dark"
+                          ? "border-emerald-800 bg-emerald-950/30 text-emerald-200"
+                          : "border-emerald-200 bg-emerald-50 text-emerald-800",
+                    )}
+                  >
+                    <p className="font-semibold">{studentUploadResult.message}</p>
+                    <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <span>Created: {studentUploadResult.summary.profiles_created}</span>
+                      <span>Updated: {studentUploadResult.summary.profiles_updated}</span>
+                      <span>Enrolled: {studentUploadResult.summary.enrolled_in_year}</span>
+                    </div>
+                    {studentUploadResult.errors.length > 0 && (
+                      <div className="mt-2">
+                        <p className="font-medium">Row issues:</p>
+                        <ul className="mt-1 max-h-28 overflow-y-auto space-y-1">
+                          {studentUploadResult.errors.slice(0, 8).map((error, index) => (
+                            <li key={`${error}-${index}`}>{error}</li>
+                          ))}
+                        </ul>
+                        {studentUploadResult.errors.length > 8 && (
+                          <p className="mt-1">
+                            +{studentUploadResult.errors.length - 8} more issue(s)
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {imageUploadResult && (
+                  <div
+                    className={combine(
+                      "mb-3 sm:mb-4 rounded-lg sm:rounded-xl border p-3 text-xs sm:text-sm",
+                      imageUploadResult.failed_count
+                        ? theme === "dark"
+                          ? "border-amber-800 bg-amber-950/30 text-amber-200"
+                          : "border-amber-200 bg-amber-50 text-amber-800"
+                        : theme === "dark"
+                          ? "border-indigo-800 bg-indigo-950/30 text-indigo-200"
+                          : "border-indigo-200 bg-indigo-50 text-indigo-800",
+                    )}
+                  >
+                    <p className="font-semibold">{imageUploadResult.message}</p>
+                    <div className="mt-2 flex flex-wrap gap-3">
+                      <span>Updated: {imageUploadResult.success_count}</span>
+                      <span>Failed: {imageUploadResult.failed_count}</span>
+                    </div>
+                    {imageUploadResult.errors.length > 0 && (
+                      <ul className="mt-2 max-h-24 overflow-y-auto space-y-1">
+                        {imageUploadResult.errors.slice(0, 6).map((error, index) => (
+                          <li key={`${error}-${index}`}>{error}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+
                 <div className={combine("text-xs", get("text", "secondary"))}>
                   <p
                     className={combine(
@@ -1681,8 +1908,11 @@ export default function AllStudentsPage() {
                       get("text", "primary"),
                     )}
                   >
-                    student_id,student_name,student_email,father_name,mother_name,father_phone,mother_phone,date_of_birth,date_of_admission,gender,accommodation,class,section,address
+                    student_id,student_name,student_email,father_name,mother_name,father_phone,mother_phone,date_of_birth,date_of_admission,gender,accommodation,class_name,section,address
                   </div>
+                  <p className={combine("mt-2 text-xs", get("text", "tertiary"))}>
+                    Dates support YYYY-MM-DD, DD-MM-YYYY, DD/MM/YYYY, MM/DD/YYYY, and DD Mon YYYY. Use accommodation values day_scholar/day scholar or hosteller/hostel; accepted headers include accommodation, accomodation, student_accommodation, and student_accomodation. Class and section are created automatically during CSV upload; manual form entries must use existing class-section records. Profile images are uploaded separately in a ZIP named by student ID, for example STU001.jpg.
+                  </p>
                 </div>
               </div>
             </div>
@@ -3028,22 +3258,7 @@ export default function AllStudentsPage() {
                     onClick={() => {
                       setMode("list");
                       setFormErrors({});
-                      setFormData({
-                        student_id: "",
-                        student_name: "",
-                        student_email: "",
-                        father_name: "",
-                        mother_name: "",
-                        father_phone: "",
-                        mother_phone: "",
-                        date_of_birth: "",
-                        date_of_admission: "",
-                        gender: "Male",
-                        accommodation: "",
-                        class_name: "",
-                        section: "",
-                        address: "",
-                      });
+                      setFormData(emptyStudentForm);
                     }}
                     className={combine(
                       "p-1 sm:p-1.5 rounded-lg sm:rounded-xl transition-all hover:bg-[var(--color-bg-hover)]",
@@ -3145,7 +3360,7 @@ export default function AllStudentsPage() {
                       )}
                     >
                       <FaEnvelope className="inline mr-1 text-xs sm:text-sm" />
-                      Email Address *
+                      Email Address (optional)
                     </label>
                     <input
                       type="email"
@@ -3472,22 +3687,7 @@ export default function AllStudentsPage() {
                     onClick={() => {
                       setMode("list");
                       setFormErrors({});
-                      setFormData({
-                        student_id: "",
-                        student_name: "",
-                        student_email: "",
-                        father_name: "",
-                        mother_name: "",
-                        father_phone: "",
-                        mother_phone: "",
-                        date_of_birth: "",
-                        date_of_admission: "",
-                        gender: "Male",
-                        accommodation: "",
-                        class_name: "",
-                        section: "",
-                        address: "",
-                      });
+                      setFormData(emptyStudentForm);
                     }}
                     className={combine(
                       getSecondaryButtonClass(),

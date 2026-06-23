@@ -3,9 +3,9 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { useThemeClasses } from '@/hooks/useThemeClasses';
-import { clearAllCookies } from '@/lib/auth';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   FaCalendarAlt,
   FaClipboardCheck,
@@ -82,7 +82,7 @@ export const StudentSidebar = ({ collapsed, onToggle, isMobile = false, onCloseM
   const [loading, setLoading] = useState(false);
   const [isCompactScreen, setIsCompactScreen] = useState(false);
   const pathname = usePathname();
-  const router = useRouter();
+  const { logout } = useAuth();
   const isMobileLikeView = isMobile || isCompactScreen;
 
   useEffect(() => {
@@ -270,19 +270,10 @@ export const StudentSidebar = ({ collapsed, onToggle, isMobile = false, onCloseM
     
     setTimeout(() => {
       console.log('Logging out from student sidebar...');
-      clearAllCookies();
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      localStorage.removeItem('user_type');
-      localStorage.removeItem('username');
-      localStorage.removeItem('login_time');
-      localStorage.removeItem('token_expiry');
-      
       toastUpdateSuccess(loadingToastId, 'Logged out successfully!');
       
-      // Redirect to login page
       setTimeout(() => {
-        router.push('/');
+        logout();
       }, 1000);
     }, 500);
   };

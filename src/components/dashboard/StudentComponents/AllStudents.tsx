@@ -43,6 +43,7 @@ import { FiCalendar, FiFilter, FiDownload, FiChevronRight, FiUsers, FiCheckCircl
 import { useTheme } from '@/contexts/ThemeContext';
 import { useThemeClasses } from '@/hooks/useThemeClasses';
 import { toastSuccess, toastError, toastInfo, toastWarning } from '@/lib/toast';
+import { apiFetch } from '@/lib/api';
 
 interface Student {
   student_id: string;
@@ -246,13 +247,7 @@ export const AllStudentsPage = () => {
   const fetchStudents = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem('token');
-      const res = await fetch('http://127.0.0.1:8000/api/schooladmin/students/', {
-        headers: {
-          Authorization: `Token ${token}`,
-          'Content-Type': 'application/json'
-        },
-      });
+      const res = await apiFetch('schooladmin/students/');
 
       if (!res.ok) {
         throw new Error(`HTTP error! status: ${res.status}`);
@@ -303,12 +298,10 @@ export const AllStudentsPage = () => {
   /* ================= DELETE STUDENT ================= */
   const deleteStudent = async (id: string) => {
     setShowDeleteConfirm(null);
-    const token = localStorage.getItem('token');
 
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/schooladmin/students/${id}/`, {
+      const response = await apiFetch(`schooladmin/students/${id}/`, {
         method: 'DELETE',
-        headers: { Authorization: `Token ${token}` },
       });
 
       if (!response.ok) {
@@ -347,10 +340,7 @@ export const AllStudentsPage = () => {
   /* ================= VIEW STUDENT DETAILS ================= */
   const viewStudentDetails = async (id: string) => {
     try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`http://127.0.0.1:8000/api/schooladmin/students/${id}/`, {
-        headers: { Authorization: `Token ${token}` },
-      });
+      const res = await apiFetch(`schooladmin/students/${id}/`);
 
       if (res.ok) {
         const student = await res.json();
@@ -371,7 +361,6 @@ export const AllStudentsPage = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const token = localStorage.getItem('token');
 
     const payload = {
       student_id: formData.student_id,
@@ -389,16 +378,15 @@ export const AllStudentsPage = () => {
     };
 
     const url = mode === 'edit'
-      ? `http://127.0.0.1:8000/api/schooladmin/students/${editId}/`
-      : `http://127.0.0.1:8000/api/schooladmin/students/`;
+      ? `schooladmin/students/${editId}/`
+      : `schooladmin/students/`;
 
     const method = mode === 'edit' ? 'PUT' : 'POST';
 
     try {
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method,
         headers: {
-          Authorization: `Token ${token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(payload),
@@ -443,6 +431,70 @@ export const AllStudentsPage = () => {
   };
 
   /* ================= BULK UPLOAD CSV ================= */
+  const downloadSampleCSV = () => {
+    const headers = [
+      'student_id',
+      'student_name',
+      'student_email',
+      'father_name',
+      'mother_name',
+      'father_phone',
+      'mother_phone',
+      'date_of_birth',
+      'gender',
+      'class',
+      'section',
+      'address',
+      'accommodation',
+    ];
+    const rows = [
+      [
+        'STU001',
+        'Arun Kumar',
+        'arun.kumar@example.com',
+        'Ramesh Kumar',
+        'Lakshmi Ramesh',
+        '9876543210',
+        '9876543211',
+        '2012-06-15',
+        'Male',
+        '6',
+        'A',
+        '12 Gandhi Street, Chennai',
+        'day_scholar',
+      ],
+      [
+        'STU002',
+        'Meena S',
+        'meena.s@example.com',
+        'Suresh',
+        'Kala Suresh',
+        '9876543220',
+        '9876543221',
+        '15/08/2012',
+        'Female',
+        '6',
+        'B',
+        '45 School Road, Chennai',
+        'hosteller',
+      ],
+    ];
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(field => `"${field}"`).join(',')),
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'student_bulk_upload_sample.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  };
+
   const handleBulkUpload = async () => {
     if (!csvFile) {
       toastWarning('Please select a CSV file first');
@@ -455,24 +507,33 @@ export const AllStudentsPage = () => {
     setUploadProgress(0);
 
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch('http://127.0.0.1:8000/api/schooladmin/csv/', {
+      const response = await apiFetch('schooladmin/csv/', {
         method: 'POST',
-        headers: {
-          Authorization: `Token ${token}`,
-        },
         body: formData,
       });
 
       const result = await response.json();
 
       if (response.ok) {
-        toastSuccess('Bulk upload completed successfully!');
+        const summary = result.summary || {};
+        const errorCount = Array.isArray(result.errors) ? result.errors.length : 0;
+        const created = summary.profiles_created ?? 0;
+        const updated = summary.profiles_updated ?? 0;
+        const enrolled = summary.enrolled_in_year ?? 0;
+        toastSuccess(
+          `Bulk upload completed. Created ${created}, updated ${updated}, enrolled ${enrolled}.`
+        );
+        if (errorCount > 0) {
+          toastWarning(`${errorCount} row(s) skipped. First issue: ${result.errors[0]}`);
+        }
         fetchStudents();
         setBulkUploadMode(false);
         setCsvFile(null);
       } else {
-        toastError(result.error || 'Upload failed');
+        const details = Array.isArray(result.errors) && result.errors.length > 0
+          ? ` ${result.errors[0]}`
+          : '';
+        toastError(`${result.error || result.message || 'Upload failed'}${details}`);
       }
     } catch (error) {
       console.error('Upload error:', error);
@@ -856,14 +917,31 @@ export const AllStudentsPage = () => {
                 )}
 
                 <div className={combine("text-xs", get('text', 'secondary'))}>
-                  <p className={combine("font-medium mb-2", get('text', 'primary'))}>CSV Format:</p>
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <p className={combine("font-medium", get('text', 'primary'))}>CSV Format:</p>
+                    <button
+                      onClick={downloadSampleCSV}
+                      className={combine(
+                        "px-3 py-1.5 rounded-lg transition-all duration-200 flex items-center gap-2",
+                        theme === 'dark'
+                          ? 'bg-slate-800 text-slate-200 hover:bg-slate-700'
+                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                      )}
+                    >
+                      <FiDownload className="text-xs" />
+                      <span>Sample CSV</span>
+                    </button>
+                  </div>
                   <div className={combine(
                     "p-3 rounded-xl font-mono text-xs",
                     get('bg', 'secondary'),
                     get('text', 'primary')
                   )}>
-                    student_id,student_name,student_email,father_name,mother_name,father_phone,mother_phone,date_of_birth,gender,class,section,address
+                    student_id,student_name,student_email,father_name,mother_name,father_phone,mother_phone,date_of_birth,gender,class,section,address,accommodation
                   </div>
+                  <p className="mt-2">
+                    Date supports YYYY-MM-DD or DD/MM/YYYY. Accommodation supports day_scholar or hosteller.
+                  </p>
                 </div>
               </div>
             </div>

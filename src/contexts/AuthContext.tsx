@@ -118,9 +118,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const logout = () => {
     clearAllCookies();
+    localStorage.clear();
+    sessionStorage.clear();
 
     setUser(null);
-    router.push('/');
+    router.replace('/');
   };
 
   return (

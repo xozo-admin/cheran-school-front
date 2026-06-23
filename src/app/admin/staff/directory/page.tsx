@@ -460,7 +460,10 @@ export default function AllStaffPage() {
     if (formData.upi_id.trim()) payload.upi_id = formData.upi_id.trim();
 
     try {
-      await adminApi.staff.create(payload);
+      await adminApi.staff.create({
+        ...payload,
+        ...schoolScope.scopeParams,
+      });
       toastSuccess("Staff member created successfully");
       setMode("list");
       resetForm();
@@ -539,7 +542,10 @@ export default function AllStaffPage() {
     if (formData.upi_id.trim()) payload.upi_id = formData.upi_id.trim();
 
     try {
-      await adminApi.staff.update(selectedStaff.staff_id, payload);
+      await adminApi.staff.update(selectedStaff.staff_id, {
+        ...payload,
+        ...schoolScope.scopeParams,
+      });
       toastSuccess("Staff member updated successfully");
       setMode("list");
       resetForm();
@@ -573,7 +579,7 @@ export default function AllStaffPage() {
     if (!staffToDelete) return;
 
     try {
-      await adminApi.staff.delete(staffToDelete.staff_id);
+      await adminApi.staff.delete(staffToDelete.staff_id, schoolScope.scopeParams);
       toastSuccess("Staff member deleted successfully");
       fetchStaff(currentPage);
       fetchStaffStats();
@@ -809,7 +815,7 @@ export default function AllStaffPage() {
 
     setUploadProgress(0);
     try {
-      await adminApi.csv.uploadStudents(csvFile);
+      await adminApi.csv.uploadStudents(csvFile, schoolScope.scopeParams);
       toastSuccess("Bulk upload completed successfully!");
       fetchStaff(currentPage);
       fetchStaffStats();
@@ -833,6 +839,7 @@ export default function AllStaffPage() {
       const response = await adminApi.csv.uploadProfileImagesZip(
         "staff",
         imagesZipFile,
+        schoolScope.scopeParams,
       );
       const data = response?.data || {};
       const successCount = Number(data?.success_count || 0);

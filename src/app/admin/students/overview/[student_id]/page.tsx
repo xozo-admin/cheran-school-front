@@ -78,6 +78,7 @@ import { BsGraphUp, BsGraphDown, BsCalendarCheck, BsCalendarX, BsBarChartFill, B
 import { useTheme } from '@/contexts/ThemeContext';
 import { useThemeClasses } from '@/hooks/useThemeClasses';
 import { toastSuccess, toastError } from '@/lib/toast';
+import { useSchoolScope } from '@/components/admin/SchoolScopeSelector';
 import { School } from 'lucide-react';
 
 // Types based on API responses
@@ -692,6 +693,7 @@ const renderStars = (score: number) => {
 export default function StudentOverviewPage() {
   const params = useParams();
   const router = useRouter();
+  const schoolScope = useSchoolScope({ storageKey: 'allstudents_school_scope' });
   const { theme } = useTheme();
   const { get, combine } = useThemeClasses();
   const student_id = params.student_id as string;
@@ -988,7 +990,7 @@ export default function StudentOverviewPage() {
     setProfileImageError(false);
 
     try {
-      const response = await adminApi.students.overview(student_id);
+      const response = await adminApi.students.overview(student_id, schoolScope.scopeParams);
       setHttpStatus(response.status);
       const payload = response.data;
       const overviewData = payload?.data || payload;
@@ -1183,7 +1185,7 @@ export default function StudentOverviewPage() {
     if (student_id) {
       fetchStudentOverview(false);
     }
-  }, [student_id]);
+  }, [student_id, schoolScope.selectedSchoolId]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;

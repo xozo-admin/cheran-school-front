@@ -66,6 +66,7 @@ import { BsGraphUp, BsGraphDown, BsCalendarCheck, BsCalendarX, BsBarChartFill, B
 import { useTheme } from '@/contexts/ThemeContext';
 import { useThemeClasses } from '@/hooks/useThemeClasses';
 import { toastSuccess, toastError, toastInfo, toastWarning } from '@/lib/toast';
+import { useSchoolScope } from '@/components/admin/SchoolScopeSelector';
 import { School } from 'lucide-react';
 
 // Types based on API responses
@@ -579,6 +580,7 @@ const resolveProfileImageUrl = (value: string | null): string | null => {
 export default function StaffOverviewPage() {
   const params = useParams();
   const router = useRouter();
+  const schoolScope = useSchoolScope({ storageKey: 'allstaff_school_scope' });
   const { theme } = useTheme();
   const { get, combine } = useThemeClasses();
   const staff_id = params.staff_id as string;
@@ -788,7 +790,7 @@ export default function StaffOverviewPage() {
     setProfileImageError(false);
 
     try {
-      const response = await adminApi.staff.overview(staff_id);
+      const response = await adminApi.staff.overview(staff_id, schoolScope.scopeParams);
       setHttpStatus(response.status);
 
       const payload = response.data;
@@ -855,7 +857,7 @@ export default function StaffOverviewPage() {
     if (staff_id) {
       fetchStaffOverview();
     }
-  }, [staff_id]);
+  }, [staff_id, schoolScope.selectedSchoolId]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;

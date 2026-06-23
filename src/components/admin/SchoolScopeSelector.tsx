@@ -148,7 +148,6 @@ export const SchoolScopeSelector = ({
       >
         <School className="h-4 w-4 shrink-0 text-blue-600" />
         <div className="min-w-0">
-          <p className={`text-[11px] font-semibold uppercase leading-tight ${get('text', 'tertiary')}`}>{label}</p>
           <p className={`truncate text-sm font-semibold ${get('text', 'primary')}`}>{selectedSchoolName}</p>
         </div>
       </div>

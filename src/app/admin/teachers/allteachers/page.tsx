@@ -518,7 +518,7 @@ export default function AllTeachersPage() {
         toastError("Teacher ID not found");
         return;
       }
-      await adminApi.teachers.delete(teacherId);
+      await adminApi.teachers.delete(teacherId, schoolScope.scopeParams);
       setTeachers((prev) => prev.filter((t) => t.id !== id));
       setSelectedTeachers((prev) =>
         prev.filter((teacherId) => teacherId !== id),
@@ -551,7 +551,7 @@ export default function AllTeachersPage() {
           failCount++;
           continue;
         }
-        await adminApi.teachers.delete(teacherId);
+        await adminApi.teachers.delete(teacherId, schoolScope.scopeParams);
         successCount++;
       } catch (error) {
         failCount++;
@@ -710,9 +710,15 @@ export default function AllTeachersPage() {
 
     try {
       if (mode === "edit") {
-        await adminApi.teachers.update(teacherIdForUrl || "", payload);
+        await adminApi.teachers.update(teacherIdForUrl || "", {
+          ...payload,
+          ...schoolScope.scopeParams,
+        });
       } else {
-        await adminApi.teachers.create(payload);
+        await adminApi.teachers.create({
+          ...payload,
+          ...schoolScope.scopeParams,
+        });
       }
 
       fetchTeachers(currentPage);
@@ -926,7 +932,7 @@ export default function AllTeachersPage() {
 
     setUploadProgress(0);
     try {
-      await adminApi.csv.uploadStudents(csvFile);
+      await adminApi.csv.uploadStudents(csvFile, schoolScope.scopeParams);
       toastSuccess("Bulk upload completed successfully!");
       fetchTeachers(currentPage);
       fetchTeacherStats();
@@ -950,6 +956,7 @@ export default function AllTeachersPage() {
       const response = await adminApi.csv.uploadProfileImagesZip(
         "teacher",
         imagesZipFile,
+        schoolScope.scopeParams,
       );
       const data = response?.data || {};
       const successCount = Number(data?.success_count || 0);
@@ -2143,19 +2150,7 @@ export default function AllTeachersPage() {
                               </div>
                             </div>
                           </th>
-                          <th
-                            className={combine(
-                              "px-3 sm:px-4 py-2 sm:py-3 text-left text-xs sm:text-sm font-medium uppercase tracking-wider",
-                              get("text", "tertiary"),
-                            )}
-                          >
-                            <div className="flex items-center space-x-1 sm:space-x-2">
-                              <FaCalendarAlt className="text-xs" />
-                              <span className="text-xs sm:text-sm">
-                                Joining Date
-                              </span>
-                            </div>
-                          </th>
+                          
                           <th
                             className={combine(
                               "px-3 sm:px-4 py-2 sm:py-3 text-left text-xs sm:text-sm font-medium uppercase tracking-wider",
@@ -2276,18 +2271,7 @@ export default function AllTeachersPage() {
                                 {teacher.department}
                               </span>
                             </td>
-                            <td className="px-3 sm:px-4 py-2 sm:py-3">
-                              <span
-                                className={combine(
-                                  "inline-flex items-center px-2 py-1 text-xs rounded-full font-medium border w-fit",
-                                  theme === "dark"
-                                    ? "bg-blue-900/30 text-blue-300 border-blue-800"
-                                    : "bg-blue-100 text-blue-700 border-blue-200",
-                                )}
-                              >
-                                {teacher.joining_date || "Not specified"}
-                              </span>
-                            </td>
+                            
                             <td className="px-3 sm:px-4 py-2 sm:py-3">
                               {teacher.assigned_class &&
                               teacher.assigned_class !== "Not Assigned" ? (

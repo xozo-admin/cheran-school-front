@@ -751,7 +751,11 @@ export default function TimetableManager() {
     sectionName: string
   ): Promise<TimetableDay> => {
     try {
-      const response = await adminApi.timetable.get({ class: className, section: sectionName });
+      const response = await adminApi.timetable.get({
+        class: className,
+        section: sectionName,
+        ...schoolScope.scopeParams
+      });
       if (response.status >= 200 && response.status < 300) {
         return response.data?.timetable || {};
       }
@@ -827,13 +831,13 @@ export default function TimetableManager() {
       fetchSectionsByClass(selectedClass);
       fetchBreaks(selectedClass);
     }
-  }, [selectedClass]);
+  }, [selectedClass, schoolScope.selectedSchoolId]);
 
   useEffect(() => {
     if (selectedClass && selectedSection) {
       fetchTimetable();
     }
-  }, [selectedClass, selectedSection, selectedDay]);
+  }, [selectedClass, selectedSection, selectedDay, schoolScope.selectedSchoolId]);
 
   useEffect(() => {
     if (viewMode === 'create' && selectedDay && selectedDay !== 'All') {

@@ -10,8 +10,8 @@ const ENABLE_ENCRYPTION =
   process.env.NEXT_PUBLIC_ENABLE_ENCRYPTION?.toLowerCase() === 'true';
 
 
-export const backend_api = 'https:macid.pythonanywhere.com';
-const API_BASE_HTTP = 'https://macid.pythonanywhere.com/api/';
+export const backend_api = 'http://10.153.15.71:8000';
+const API_BASE_HTTP = 'http://10.153.15.71:8000/api/';
 
 
 declare module 'axios' {
@@ -40,7 +40,6 @@ export const setSessionKey = (key: string | null) => {
 
 const apiClient = axios.create({
   baseURL: API_BASE_HTTP,
-  timeout: 30000,
   headers: {
     'ngrok-skip-browser-warning': 'true'
   }
@@ -605,14 +604,26 @@ export const adminApi = {
       apiClient.get('schooladmin/students/paginated/', { params }),
     enrollments: (params?: { page?: number; page_size?: number; academic_year?: number | string; school_id?: number }) =>
       apiClient.get('student/enrollments/', { params }),
-    detail: (studentId: string) => apiClient.get(`schooladmin/students/${studentId}/`),
-    overview: (studentId: string) =>
+    detail: (studentId: string, params?: { school_id?: number }) =>
+      apiClient.get(`schooladmin/students/${studentId}/`, { params }),
+    overview: (studentId: string, params?: { school_id?: number }) =>
       apiClient.get('student/overview/', {
-        params: { student_id: studentId },
+        params: { student_id: studentId, ...(params || {}) },
       }),
-    create: (data: any) => apiClient.post('schooladmin/students/', data),
-    update: (studentId: string, data: any) => apiClient.put(`schooladmin/students/${studentId}/`, data),
-    delete: (studentId: string) => apiClient.delete(`schooladmin/students/${studentId}/`),
+    create: (data: any, params?: { school_id?: number }) =>
+      apiClient.post('schooladmin/students/', data, { params }),
+    update: (studentId: string, data: any, params?: { school_id?: number }) =>
+      apiClient.put(`schooladmin/students/${studentId}/`, data, { params }),
+    delete: (studentId: string, params?: { school_id?: number }) =>
+      apiClient.delete(`schooladmin/students/${studentId}/`, { params }),
+    rolePermissions: {
+      list: (params?: { school_id?: number }) =>
+        apiClient.get('student/role-permissions/', { params }),
+      update: (data: {
+        role_permissions: Record<string, boolean>;
+        school_id?: number;
+      }) => apiClient.put('student/role-permissions/', data),
+    },
   },
 
   promotions: {
@@ -692,14 +703,16 @@ export const adminApi = {
 
     allAllocations: (params?: { school_id?: number }) => apiClient.get('teacher/all-allocations/', { params }),
 
-    detail: (teacherId: string | number) => apiClient.get(`schooladmin/teachers/${teacherId}/`),
+    detail: (teacherId: string | number, params?: { school_id?: number }) =>
+      apiClient.get(`schooladmin/teachers/${teacherId}/`, { params }),
 
     create: (data: any) => apiClient.post('schooladmin/teachers/', data),
 
     update: (teacherId: string | number, data: any) =>
       apiClient.put(`schooladmin/teachers/${teacherId}/`, data),
 
-    delete: (teacherId: string | number) => apiClient.delete(`schooladmin/teachers/${teacherId}/`),
+    delete: (teacherId: string | number, params?: { school_id?: number }) =>
+      apiClient.delete(`schooladmin/teachers/${teacherId}/`, { params }),
 
     assignClassTeacher: (data: {
       teacher_id: string;
@@ -717,9 +730,9 @@ export const adminApi = {
         params: { teacher_id: teacherId },
       }),
 
-    overview: (teacherId: string) =>
+    overview: (teacherId: string, params?: { school_id?: number }) =>
       apiClient.get('schooladmin/teacher/overview/', {
-        params: { teacher_id: teacherId },
+        params: { teacher_id: teacherId, ...(params || {}) },
       }),
 
     assignSubject: (data: {
@@ -738,6 +751,15 @@ export const adminApi = {
       apiClient.delete('teacher/remove-subject/', {
         data,
       }),
+    rolePermissions: {
+      list: (params?: { school_id?: number; teacher_id?: string }) =>
+        apiClient.get('teacher/role-permissions/', { params }),
+      update: (data: {
+        teacher_id: string;
+        role_permissions: Record<string, boolean>;
+        school_id?: number;
+      }) => apiClient.put('teacher/role-permissions/', data),
+    },
   },
 
   staff: {
@@ -749,14 +771,25 @@ export const adminApi = {
       role?: string;
       school_id?: number;
     }) => apiClient.get('schooladmin/staff/paginated/', { params }),
-    detail: (staffId: string) => apiClient.get(`schooladmin/staff/${staffId}/`),
+    detail: (staffId: string, params?: { school_id?: number }) =>
+      apiClient.get(`schooladmin/staff/${staffId}/`, { params }),
     create: (data: any) => apiClient.post('schooladmin/staff/', data),
     update: (staffId: string, data: any) => apiClient.put(`schooladmin/staff/${staffId}/`, data),
-    delete: (staffId: string) => apiClient.delete(`schooladmin/staff/${staffId}/`),
-    overview: (staffId: string) =>
+    delete: (staffId: string, params?: { school_id?: number }) =>
+      apiClient.delete(`schooladmin/staff/${staffId}/`, { params }),
+    overview: (staffId: string, params?: { school_id?: number }) =>
       apiClient.get('schooladmin/staff/overview/', {
-        params: { staff_id: staffId },
+        params: { staff_id: staffId, ...(params || {}) },
       }),
+    rolePermissions: {
+      list: (params?: { school_id?: number; role?: string }) =>
+        apiClient.get('staff/role-permissions/', { params }),
+      update: (data: {
+        role: string;
+        role_permissions: Record<string, boolean>;
+        school_id?: number;
+      }) => apiClient.put('staff/role-permissions/', data),
+    },
   },
 
   holidays: {
@@ -1419,16 +1452,16 @@ export const adminApi = {
   },
 
   csv: {
-    uploadStudents: (file: File) => {
+    uploadStudents: (file: File, params?: { school_id?: number }) => {
       const formData = new FormData();
       formData.append('file', file);
-      return apiClient.post('schooladmin/csv/', formData);
+      return apiClient.post('schooladmin/csv/', formData, { params });
     },
-    uploadProfileImagesZip: (type: 'student' | 'teacher' | 'staff', zipFile: File) => {
+    uploadProfileImagesZip: (type: 'student' | 'teacher' | 'staff', zipFile: File, params?: { school_id?: number }) => {
       const formData = new FormData();
       formData.append('type', type);
       formData.append('zip_file', zipFile);
-      return apiClient.post('schooladmin/bulk-upload-images/', formData);
+      return apiClient.post('schooladmin/bulk-upload-images/', formData, { params });
     },
   },
 

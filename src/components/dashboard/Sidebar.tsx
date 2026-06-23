@@ -372,6 +372,7 @@ const isSubItemActive = (link: string): boolean => {
       icon: <FaUserGraduate className="w-5 h-5" />,
       subItems: [
         { label: 'All Students', link: '/admin/students/allstudents', icon: <FaUsers className="w-4 h-4" /> },
+        { label: 'Student Roles', link: '/admin/students/roles', icon: <FaUserShield className="w-4 h-4" /> },
         { label: 'Attendance', link: '/admin/students/attendance', icon: <FaUserCheck className="w-4 h-4" /> },
         { label: 'Grades', link: '/admin/students/grades', icon: <FaChartLine className="w-4 h-4" /> }
       ]
@@ -382,6 +383,7 @@ const isSubItemActive = (link: string): boolean => {
       icon: <FaChalkboardTeacher className="w-5 h-5" />,
       subItems: [
         { label: 'All Teachers', link: '/admin/teachers/allteachers', icon: <FaUserTie className="w-4 h-4" /> },
+        { label: 'Teacher Roles', link: '/admin/teachers/roles', icon: <FaUserShield className="w-4 h-4" /> },
         { label: 'Attendance', link: '/admin/teachers/attendance', icon: <FaCalendarCheck className="w-4 h-4" /> },
       ]
     },
@@ -394,6 +396,11 @@ const isSubItemActive = (link: string): boolean => {
           label: 'All Staff', 
           link: '/admin/staff/directory', 
           icon: <FaUsers className="w-4 h-4" />,
+        },
+        {
+          label: 'Staff Roles',
+          link: '/admin/staff/roles',
+          icon: <FaUserShield className="w-4 h-4" />,
         },
         { 
           label: 'Attendance', 
