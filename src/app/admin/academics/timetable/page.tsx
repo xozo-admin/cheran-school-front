@@ -1619,6 +1619,14 @@ export default function TimetableManager() {
     setPeriods([{ period_no: 1, start_time: '08:00:00', end_time: '08:45:00', subject: '', teacher_id: '' }]);
   };
 
+  const normalizeTimeForInput = (time: string) => (time || '').slice(0, 5);
+
+  const normalizeTimeForPayload = (time: string) => {
+    if (!time) return '';
+    if (/^\d{2}:\d{2}$/.test(time)) return `${time}:00`;
+    return time.slice(0, 8);
+  };
+
   const handleCreateBreak = async () => {
     if (!selectedClass) {
       toastInfo('Please select a class');
@@ -1634,7 +1642,9 @@ export default function TimetableManager() {
       const response = await adminApi.timetable.createBreak({
         class_name: selectedClass,
         ...schoolScope.scopeParams,
-        ...newBreak
+        name: newBreak.name,
+        start_time: normalizeTimeForPayload(newBreak.start_time),
+        end_time: normalizeTimeForPayload(newBreak.end_time)
       });
       toastSuccess(response.data.message || 'Break added successfully');
       setShowBreakModal(false);
@@ -1653,8 +1663,8 @@ export default function TimetableManager() {
         id: editingBreak.id,
         class_name: selectedClass,
         name: editingBreak.name,
-        start_time: editingBreak.start_time,
-        end_time: editingBreak.end_time,
+        start_time: normalizeTimeForPayload(editingBreak.start_time),
+        end_time: normalizeTimeForPayload(editingBreak.end_time),
         ...schoolScope.scopeParams,
       });
       toastSuccess(response.data.message || 'Break updated successfully');
@@ -2295,10 +2305,10 @@ export default function TimetableManager() {
                                     </label>
                                     <input
                                       type="time"
-                                      value={item.start_time.substring(0, 5)}
+                                      value={normalizeTimeForInput(item.start_time)}
                                       onChange={(e) => {
                                         const periodIndex = periods.findIndex(p => p.period_no === item.period_no);
-                                        if (periodIndex !== -1) updatePeriod(periodIndex, 'start_time', e.target.value + ':00');
+                                        if (periodIndex !== -1) updatePeriod(periodIndex, 'start_time', normalizeTimeForPayload(e.target.value));
                                       }}
                                       className={combine(getInputClass(), "text-sm")}
                                       step="1"
@@ -2311,10 +2321,10 @@ export default function TimetableManager() {
                                     </label>
                                     <input
                                       type="time"
-                                      value={item.end_time.substring(0, 5)}
+                                      value={normalizeTimeForInput(item.end_time)}
                                       onChange={(e) => {
                                         const periodIndex = periods.findIndex(p => p.period_no === item.period_no);
-                                        if (periodIndex !== -1) updatePeriod(periodIndex, 'end_time', e.target.value + ':00');
+                                        if (periodIndex !== -1) updatePeriod(periodIndex, 'end_time', normalizeTimeForPayload(e.target.value));
                                       }}
                                       className={combine(getInputClass(), "text-sm")}
                                       step="1"
@@ -3426,9 +3436,9 @@ export default function TimetableManager() {
                 </label>
                 <input
                   type="time"
-                  value={(editingBreak ? editingBreak.start_time : newBreak.start_time).substring(0, 5)}
+                  value={normalizeTimeForInput(editingBreak ? editingBreak.start_time : newBreak.start_time)}
                   onChange={(e) => {
-                    const value = e.target.value + ':00';
+                    const value = normalizeTimeForPayload(e.target.value);
                     if (editingBreak) {
                       setEditingBreak({ ...editingBreak, start_time: value });
                     } else {
@@ -3453,9 +3463,9 @@ export default function TimetableManager() {
                 </label>
                 <input
                   type="time"
-                  value={(editingBreak ? editingBreak.end_time : newBreak.end_time).substring(0, 5)}
+                  value={normalizeTimeForInput(editingBreak ? editingBreak.end_time : newBreak.end_time)}
                   onChange={(e) => {
-                    const value = e.target.value + ':00';
+                    const value = normalizeTimeForPayload(e.target.value);
                     if (editingBreak) {
                       setEditingBreak({ ...editingBreak, end_time: value });
                     } else {

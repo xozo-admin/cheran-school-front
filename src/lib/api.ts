@@ -10,8 +10,8 @@ const ENABLE_ENCRYPTION =
   process.env.NEXT_PUBLIC_ENABLE_ENCRYPTION?.toLowerCase() === 'true';
 
 
-export const backend_api = 'https://macid.pythonanywhere.com';
-const API_BASE_HTTP = 'https://macid.pythonanywhere.com/api/';
+export const backend_api = 'https://xozoschool.store';
+const API_BASE_HTTP = 'https://xozoschool.store/api/';
 
 
 declare module 'axios' {
