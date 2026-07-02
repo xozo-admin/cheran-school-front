@@ -142,6 +142,10 @@ export default function SubjectsManager() {
   const [assignments, setAssignments] = useState<Assignment[]>([
     { teacher_id: '', subject_name: '', classes: [], sections: [] }
   ]);
+  const [subjectToEdit, setSubjectToEdit] = useState<Subject | null>(null);
+  const [editedSubjectName, setEditedSubjectName] = useState('');
+  const [subjectToDelete, setSubjectToDelete] = useState<Subject | null>(null);
+  const [subjectActionLoading, setSubjectActionLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<string>('classes');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [loading, setLoading] = useState({
@@ -395,6 +399,7 @@ export default function SubjectsManager() {
       setClassSubjects(data);
     } catch (error) {
       console.error('Network error loading subjects for class');
+      toastError(`Failed to load subjects for Class ${className}`);
     } finally {
       setLoading(prev => ({ ...prev, subjects: false }));
     }
@@ -642,6 +647,103 @@ export default function SubjectsManager() {
       theme === 'dark' ? 'text-amber-400 bg-amber-900/30' : 'text-amber-600 bg-amber-100',
     ];
     return colors[index % colors.length];
+  };
+
+  const getApiMessage = (payload: any, fallback: string) =>
+    payload?.message || payload?.detail || payload?.error || fallback;
+
+  const getActiveClassName = () => classSubjects?.class || classSubjects?.class_name || selectedClass;
+
+  const closeSubjectEditModal = () => {
+    setSubjectToEdit(null);
+    setEditedSubjectName('');
+  };
+
+  const closeSubjectDeleteModal = () => {
+    setSubjectToDelete(null);
+  };
+
+  const refreshSubjectData = async (className?: string) => {
+    const targetClass = className || getActiveClassName();
+    await Promise.all([
+      targetClass ? fetchClassSubjects(targetClass) : Promise.resolve(),
+      fetchAllClassSubjects(),
+      fetchTeacherAllocations(),
+    ]);
+  };
+
+  const openEditSubjectModal = (subject: Subject) => {
+    setSubjectToEdit(subject);
+    setEditedSubjectName(String(subject.name || ''));
+  };
+
+  const openDeleteSubjectModal = (subject: Subject) => {
+    setSubjectToDelete(subject);
+  };
+
+  const handleUpdateSubject = async () => {
+    const className = getActiveClassName();
+
+    if (!className || !subjectToEdit) {
+      toastError('Please select a class first');
+      return;
+    }
+
+    const nextName = editedSubjectName.trim();
+    const currentName = String(subjectToEdit.name).trim();
+
+    if (!nextName) {
+      toastWarning('Subject name is required');
+      return;
+    }
+
+    if (nextName === currentName) {
+      toastInfo('No changes were made');
+      return;
+    }
+
+    try {
+      setSubjectActionLoading(true);
+      const response = await adminApi.academics.structureEdit({
+        type: 'subject',
+        class_name: className,
+        old_name: currentName,
+        new_name: nextName,
+        ...schoolScope.scopeParams,
+      });
+      toastSuccess(getApiMessage(response.data, 'Subject updated successfully'));
+      closeSubjectEditModal();
+      await refreshSubjectData(className);
+    } catch (error: any) {
+      toastError(error?.response?.data?.error || error?.response?.data?.message || 'Failed to update subject');
+    } finally {
+      setSubjectActionLoading(false);
+    }
+  };
+
+  const handleDeleteSubject = async () => {
+    const className = getActiveClassName();
+
+    if (!className || !subjectToDelete) {
+      toastError('Please select a class first');
+      return;
+    }
+
+    try {
+      setSubjectActionLoading(true);
+      const response = await adminApi.academics.structureManage({
+        class: className,
+        subject: String(subjectToDelete.name),
+        ...schoolScope.scopeParams,
+      });
+      toastSuccess(getApiMessage(response.data, 'Subject deleted successfully'));
+      closeSubjectDeleteModal();
+      await refreshSubjectData(className);
+    } catch (error: any) {
+      toastError(error?.response?.data?.error || error?.response?.data?.message || 'Failed to delete subject');
+    } finally {
+      setSubjectActionLoading(false);
+    }
   };
 
   return (
@@ -1174,7 +1276,7 @@ export default function SubjectsManager() {
                       
                       {classSubjects.subjects.length > 0 ? (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                          {classSubjects.subjects.map((subject: { name: string | number | boolean | ReactElement<any, string | JSXElementConstructor<any>> | Iterable<ReactNode> | PromiseLikeOfReactNode | null | undefined; id: Key | null | undefined; subject_code: string | number | boolean | ReactElement<any, string | JSXElementConstructor<any>> | Iterable<ReactNode> | PromiseLikeOfReactNode | null | undefined; }, index: number) => {
+                          {classSubjects.subjects.map((subject: Subject, index: number) => {
                             const SubjectIcon = getSubjectIcon(index);
                             const subjectColor = getSubjectColor(index);
                             const mappedSubjectColor = getSubjectColorByName(String(subject.name));
@@ -1194,8 +1296,8 @@ export default function SubjectsManager() {
                               )}
                               style={mappedSubjectColor ? getSubjectGradientStyle(mappedSubjectColor) : undefined}>
                                 {/* Subject Header */}
-                                <div className="flex items-center justify-between mb-4">
-                                  <div className="flex items-center gap-3">
+                                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-4">
+                                  <div className="flex items-center gap-3 min-w-0">
                                     <div className={combine(
                                       "p-2.5 rounded-lg",
                                       theme === 'dark' 
@@ -1210,23 +1312,56 @@ export default function SubjectsManager() {
                                       style={mappedSubjectColor ? { color: mappedSubjectColor.text } : undefined}
                                       />
                                     </div>
-                                    <div>
+                                    <div className="min-w-0">
                                       <h4
-                                        className={combine("font-semibold", !mappedSubjectColor ? get('text', 'primary') : '')}
+                                        className={combine("font-semibold truncate", !mappedSubjectColor ? get('text', 'primary') : '')}
                                         style={mappedSubjectColor ? { color: mappedSubjectColor.text } : undefined}
                                       >
                                         {subject.name}
                                       </h4>
                                     </div>
                                   </div>
-                                  <span className={combine(
-                                    "px-2.5 py-1 rounded-full text-xs font-medium",
-                                    theme === 'dark' ? 'bg-black/30 text-gray-300' : 'bg-white text-gray-600',
-                                    mappedSubjectColor ? 'bg-white/20' : ''
-                                  )}
-                                  style={mappedSubjectColor ? { color: mappedSubjectColor.text } : undefined}>
-                                    {subject.subject_code}
-                                  </span>
+
+                                  <div className="flex items-center gap-2 self-start sm:ml-auto">
+                                    <span
+                                      className={combine(
+                                        "inline-flex h-9 items-center rounded-full px-3 text-xs font-medium shrink-0",
+                                        theme === 'dark' ? 'bg-black/30 text-gray-300' : 'bg-white text-gray-600',
+                                        mappedSubjectColor ? 'bg-white/20' : ''
+                                      )}
+                                      style={mappedSubjectColor ? { color: mappedSubjectColor.text } : undefined}
+                                    >
+                                      {subject.subject_code}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => openEditSubjectModal(subject)}
+                                      className={combine(
+                                        "h-9 w-9 inline-flex items-center justify-center rounded-xl transition-all duration-200 hover:scale-[1.02] border",
+                                        theme === 'dark'
+                                          ? 'bg-white/10 text-white hover:bg-white/20 border-white/10'
+                                          : 'bg-white/80 text-gray-700 hover:bg-white border-gray-200'
+                                      )}
+                                      aria-label={`Edit subject ${subject.name}`}
+                                      title="Edit subject"
+                                    >
+                                      <Edit2 className="h-4 w-4 shrink-0" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => openDeleteSubjectModal(subject)}
+                                      className={combine(
+                                        "h-9 w-9 inline-flex items-center justify-center rounded-xl transition-all duration-200 hover:scale-[1.02] border",
+                                        theme === 'dark'
+                                          ? 'bg-red-500/20 text-red-200 hover:bg-red-500/30 border-red-500/10'
+                                          : 'bg-red-50 text-red-600 hover:bg-red-100 border-red-200'
+                                      )}
+                                      aria-label={`Delete subject ${subject.name}`}
+                                      title="Delete subject"
+                                    >
+                                      <Trash2 className="h-4 w-4 shrink-0" />
+                                    </button>
+                                  </div>
                                 </div>
                                 
                                 {/* Subject Details */}
@@ -1380,6 +1515,172 @@ export default function SubjectsManager() {
           </div>
         </div>
       </div>
+
+      {/* Edit Subject Modal */}
+      {subjectToEdit && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 animate-fade-in backdrop-blur-sm">
+          <div className={combine(
+            getCardGradientClass('indigo'),
+            "max-w-md w-full shadow-2xl"
+          )}>
+            <div className="flex justify-between items-start gap-4 mb-4">
+              <div>
+                <h2 className={combine("text-xl font-bold", get('text', 'primary'))}>Edit Subject</h2>
+                <p className={combine("text-sm mt-1", get('text', 'secondary'))}>
+                  Rename the subject for Class {getActiveClassName() || selectedClass}
+                </p>
+              </div>
+              <button
+                onClick={closeSubjectEditModal}
+                className={combine(
+                  "p-2 rounded-xl transition-all hover:bg-[var(--color-bg-hover)]",
+                  get('icon', 'secondary')
+                )}
+                disabled={subjectActionLoading}
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className={combine("block text-sm font-medium mb-2", get('text', 'primary'))}>
+                  Subject Name *
+                </label>
+                <input
+                  type="text"
+                  value={editedSubjectName}
+                  onChange={(e) => setEditedSubjectName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleUpdateSubject();
+                    }
+                  }}
+                  className={getInputClass()}
+                  placeholder="Enter the new subject name"
+                  autoFocus
+                />
+              </div>
+
+              <div className={combine("rounded-xl p-3 text-sm", get('bg', 'secondary'))}>
+                <p className={combine("font-medium mb-1", get('text', 'primary'))}>Current subject</p>
+                <p className={combine("text-sm", get('text', 'secondary'))}>
+                  {subjectToEdit.name} • {subjectToEdit.subject_code}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={closeSubjectEditModal}
+                className={combine(getSecondaryButtonClass(), "hover:scale-[1.02] active:scale-[0.98]")}
+                disabled={subjectActionLoading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUpdateSubject}
+                disabled={subjectActionLoading || !editedSubjectName.trim()}
+                className={combine(
+                  "flex-1 px-4 py-3 rounded-xl transition-all duration-200 font-medium flex items-center justify-center gap-2",
+                  theme === 'dark'
+                    ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white'
+                    : 'bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white',
+                  "disabled:opacity-50 disabled:cursor-not-allowed hover:scale-[1.02] active:scale-[0.98]"
+                )}
+              >
+                {subjectActionLoading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Edit2 className="h-4 w-4" />
+                    Update Subject
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Subject Confirmation Modal */}
+      {subjectToDelete && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 animate-fade-in backdrop-blur-sm">
+          <div className={combine(
+            getCardGradientClass('red'),
+            "max-w-md w-full shadow-2xl"
+          )}>
+            <div className="flex justify-between items-start gap-4 mb-4">
+              <div>
+                <h2 className={combine("text-xl font-bold", get('text', 'primary'))}>Delete Subject</h2>
+                <p className={combine("text-sm mt-1", get('text', 'secondary'))}>
+                  This action cannot be undone.
+                </p>
+              </div>
+              <button
+                onClick={closeSubjectDeleteModal}
+                className={combine(
+                  "p-2 rounded-xl transition-all hover:bg-[var(--color-bg-hover)]",
+                  get('icon', 'secondary')
+                )}
+                disabled={subjectActionLoading}
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className={combine("rounded-xl p-4 mb-4 border", get('border', 'primary'), get('bg', 'secondary'))}>
+              <p className={combine("text-sm font-medium", get('text', 'primary'))}>
+                {subjectToDelete.name}
+              </p>
+              <p className={combine("text-sm mt-1", get('text', 'secondary'))}>
+                Class {getActiveClassName() || selectedClass} • Code {subjectToDelete.subject_code}
+              </p>
+            </div>
+
+            <p className={combine("text-sm leading-6", get('text', 'secondary'))}>
+              Deleting this subject will remove it from the selected class and update the class overview immediately.
+            </p>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={closeSubjectDeleteModal}
+                className={combine(getSecondaryButtonClass(), "hover:scale-[1.02] active:scale-[0.98]")}
+                disabled={subjectActionLoading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteSubject}
+                disabled={subjectActionLoading}
+                className={combine(
+                  "flex-1 px-4 py-3 rounded-xl transition-all duration-200 font-medium flex items-center justify-center gap-2",
+                  theme === 'dark'
+                    ? 'bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white'
+                    : 'bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white',
+                  "disabled:opacity-50 disabled:cursor-not-allowed hover:scale-[1.02] active:scale-[0.98]"
+                )}
+              >
+                {subjectActionLoading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-4 w-4" />
+                    Delete Subject
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Bulk Assign Subjects Modal */}
       {isBulkAssignOpen && (

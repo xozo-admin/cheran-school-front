@@ -4,7 +4,7 @@
 
 import { adminApi } from '@/lib/api';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import {
   FaUserTie,
   FaCalendarAlt,
@@ -36,6 +36,8 @@ import {
   FaChevronDown,
   FaTimes,
   FaSchool,
+  FaUpload,
+  FaFileAlt,
 } from 'react-icons/fa';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useThemeClasses } from '@/hooks/useThemeClasses';
@@ -169,6 +171,16 @@ export default function TeacherAttendancePage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  const [weeklyImportFile, setWeeklyImportFile] = useState<File | null>(null);
+  const [weeklyImportSummary, setWeeklyImportSummary] = useState<{
+    created: number;
+    updated: number;
+    skipped: number;
+    total_rows: number;
+    errors: string[];
+  } | null>(null);
+  const [weeklyImportLoading, setWeeklyImportLoading] = useState(false);
+  const weeklyImportInputRef = useRef<HTMLInputElement | null>(null);
 
   // State for history tab
   const [teachers, setTeachers] = useState<DailyAttendance[]>([]);
@@ -369,6 +381,108 @@ useEffect(() => {
       colors.text,
       colors.border
     );
+  };
+
+  const getApiMessage = (payload: any, fallback: string) =>
+    payload?.message || payload?.detail || payload?.error || fallback;
+
+  const isAllowedAttendanceImportFile = (file: File) =>
+    /\.(csv|xlsx|xlsm)$/i.test(file.name);
+
+  const downloadWeeklyRegisterTemplate = () => {
+    const now = new Date();
+    const mondayOffset = (now.getDay() + 6) % 7;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - mondayOffset);
+
+    const rows = Array.from({ length: 5 }, (_, index) => {
+      const date = new Date(monday);
+      date.setDate(monday.getDate() + index);
+      return [
+        `TCHR${String(index + 1).padStart(3, '0')}`,
+        date.toISOString().split('T')[0],
+        index % 3 === 0 ? 'Present' : index % 3 === 1 ? 'Late' : 'Absent',
+      ];
+    });
+
+    const csvContent = [
+      ['teacher_id', 'date', 'status'].join(','),
+      ...rows.map((row) => row.map((field) => `"${String(field).replace(/"/g, '""')}"`).join(',')),
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `teacher_weekly_attendance_template_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+    toastSuccess('Weekly attendance template downloaded');
+  };
+
+  const handleWeeklyImportFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] || null;
+    if (!file) {
+      setWeeklyImportFile(null);
+      return;
+    }
+
+    if (!isAllowedAttendanceImportFile(file)) {
+      toastError('Please upload a CSV, XLSX, or XLSM file');
+      event.target.value = '';
+      setWeeklyImportFile(null);
+      return;
+    }
+
+    setWeeklyImportFile(file);
+    setWeeklyImportSummary(null);
+  };
+
+  const clearWeeklyImportFile = () => {
+    setWeeklyImportFile(null);
+    setWeeklyImportSummary(null);
+    if (weeklyImportInputRef.current) {
+      weeklyImportInputRef.current.value = '';
+    }
+  };
+
+  const uploadWeeklyAttendanceFile = async () => {
+    if (!weeklyImportFile) {
+      toastError('Please choose a CSV or Excel file first');
+      return;
+    }
+
+    if (!isAllowedAttendanceImportFile(weeklyImportFile)) {
+      toastError('Please upload a CSV, XLSX, or XLSM file');
+      return;
+    }
+
+    setWeeklyImportLoading(true);
+    try {
+      const response = await adminApi.attendance.teacher.bulkImport(weeklyImportFile);
+      const data = response.data;
+      const summary = data?.summary || null;
+
+      setWeeklyImportSummary(summary);
+      toastSuccess(getApiMessage(data, 'Teacher attendance imported successfully'));
+      if (Array.isArray(data?.errors) && data.errors.length > 0) {
+        toastError(`${data.errors.length} row(s) had issues. Check the details below.`);
+      }
+
+      clearWeeklyImportFile();
+      await fetchDailyReport();
+      await fetchAllTeachers();
+    } catch (error: any) {
+      toastError(
+        error?.response?.data?.error ||
+        error?.response?.data?.message ||
+        'Failed to import teacher attendance file'
+      );
+    } finally {
+      setWeeklyImportLoading(false);
+    }
   };
 
   // Fetch all teachers for dropdown
@@ -1248,6 +1362,7 @@ useEffect(() => {
     setSelectedTeacherId('');
     setSelectedTeacher(null);
     setHistoryData(null);
+    clearWeeklyImportFile();
   }, [schoolScope.selectedSchoolId]);
 
   // Initialize / refresh today tab data
@@ -1502,6 +1617,221 @@ useEffect(() => {
                 "text-sm sm:text-lg",
                 theme === 'dark' ? 'text-red-400' : 'text-red-600'
               )} />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Weekly Register Import */}
+      <div className={combine(getCardGradientClass('blue'), 'mb-4')}>
+        <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">
+          <div className="space-y-3 flex-1">
+            <div>
+              <h3 className={combine("text-base sm:text-lg font-bold", get('text', 'primary'))}>
+                Weekly Register Import
+              </h3>
+              <p className={combine("text-xs sm:text-sm mt-1", get('text', 'secondary'))}>
+                Upload a CSV or Excel file to import teacher attendance in bulk.
+              </p>
+            </div>
+
+            <div className={combine(
+              "rounded-xl border p-3 sm:p-4",
+              get('border', 'secondary'),
+              get('bg', 'secondary')
+            )}>
+              <div className="flex items-start gap-3">
+                <div className={combine(
+                  "h-10 w-10 rounded-xl flex items-center justify-center shrink-0",
+                  theme === 'dark' ? 'bg-blue-900/30 text-blue-300' : 'bg-blue-100 text-blue-600'
+                )}>
+                  <FaFileAlt className="text-sm" />
+                </div>
+                <div className="space-y-2 text-xs sm:text-sm">
+                  <p className={combine("font-medium", get('text', 'primary'))}>
+                    Required columns: <span className="font-semibold">teacher_id</span>, <span className="font-semibold">date</span>, <span className="font-semibold">status</span>
+                  </p>
+                  <p className={combine("leading-6", get('text', 'secondary'))}>
+                    Status values supported: Present, Absent, Late, On Leave. File formats supported: CSV, XLSX, XLSM.
+                  </p>
+                  <p className={combine("leading-6", get('text', 'tertiary'))}>
+                    One row represents one teacher on one date, which works well for weekly register uploads.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={downloadWeeklyRegisterTemplate}
+              className={combine(getSecondaryButtonClass(), "inline-flex items-center gap-2")}
+            >
+              <FaDownload className="text-xs sm:text-sm" />
+              <span>Download Template</span>
+            </button>
+          </div>
+
+          <div className={combine(
+            "w-full xl:max-w-xl rounded-2xl border p-4 sm:p-5",
+            get('border', 'secondary'),
+            get('bg', 'secondary')
+          )}>
+            <div className="space-y-4">
+              <div>
+                <label className={combine("block text-xs sm:text-sm font-medium mb-2", get('text', 'primary'))}>
+                  Select File
+                </label>
+                <input
+                  ref={weeklyImportInputRef}
+                  type="file"
+                  accept=".csv,.xlsx,.xlsm"
+                  onChange={handleWeeklyImportFileChange}
+                  className={combine(
+                    "block w-full text-xs sm:text-sm file:mr-4 file:rounded-lg file:border-0 file:px-4 file:py-2 file:font-medium",
+                    theme === 'dark'
+                      ? 'text-gray-200 file:bg-blue-600 file:text-white hover:file:bg-blue-700'
+                      : 'text-gray-700 file:bg-blue-500 file:text-white hover:file:bg-blue-600'
+                  )}
+                />
+              </div>
+
+              {weeklyImportFile ? (
+                <div className={combine(
+                  "flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border p-3",
+                  get('border', 'primary'),
+                  get('bg', 'card')
+                )}>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className={combine(
+                      "h-10 w-10 rounded-xl flex items-center justify-center shrink-0",
+                      theme === 'dark' ? 'bg-emerald-900/30 text-emerald-300' : 'bg-emerald-100 text-emerald-600'
+                    )}>
+                      <FaUpload className="text-sm" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className={combine("text-sm font-medium truncate", get('text', 'primary'))}>
+                        {weeklyImportFile.name}
+                      </p>
+                      <p className={combine("text-xs", get('text', 'tertiary'))}>
+                        {(weeklyImportFile.size / 1024).toFixed(1)} KB
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={clearWeeklyImportFile}
+                    className={combine(
+                      "px-3 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all",
+                      theme === 'dark'
+                        ? 'bg-gray-800 text-gray-200 hover:bg-gray-700'
+                        : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-200'
+                    )}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ) : (
+                <div className={combine(
+                  "rounded-xl border border-dashed p-4 text-center",
+                  get('border', 'secondary'),
+                  theme === 'dark' ? 'bg-gray-900/30' : 'bg-white/60'
+                )}>
+                  <FaUpload className={combine("mx-auto text-lg", get('icon', 'secondary'))} />
+                  <p className={combine("mt-2 text-xs sm:text-sm", get('text', 'secondary'))}>
+                    No file selected yet
+                  </p>
+                </div>
+              )}
+
+              <div className="flex flex-col sm:flex-row gap-3">
+                <button
+                  onClick={uploadWeeklyAttendanceFile}
+                  disabled={weeklyImportLoading || !weeklyImportFile}
+                  className={combine(
+                    "flex-1 inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 font-medium transition-all duration-200",
+                    theme === 'dark'
+                      ? 'bg-gradient-to-r from-indigo-600 to-blue-600 text-white hover:from-indigo-700 hover:to-blue-700'
+                      : 'bg-gradient-to-r from-indigo-500 to-blue-500 text-white hover:from-indigo-600 hover:to-blue-600',
+                    "disabled:opacity-50 disabled:cursor-not-allowed"
+                  )}
+                >
+                  {weeklyImportLoading ? (
+                    <>
+                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                      Importing...
+                    </>
+                  ) : (
+                    <>
+                      <FaUpload className="text-xs sm:text-sm" />
+                      <span>Upload Attendance</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={clearWeeklyImportFile}
+                  className={combine(
+                    "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 font-medium transition-all duration-200",
+                    getSecondaryButtonClass()
+                  )}
+                >
+                  <FaTimes className="text-xs sm:text-sm" />
+                  <span>Clear</span>
+                </button>
+              </div>
+
+              {weeklyImportSummary && (
+                <div className={combine(
+                  "rounded-xl border p-3 sm:p-4 space-y-3",
+                  get('border', 'primary'),
+                  get('bg', 'card')
+                )}>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                    <div className={combine("rounded-lg p-2", theme === 'dark' ? 'bg-emerald-900/20' : 'bg-emerald-50')}>
+                      <p className={combine("text-[10px] uppercase", get('text', 'tertiary'))}>Created</p>
+                      <p className={combine("text-sm font-bold", theme === 'dark' ? 'text-emerald-300' : 'text-emerald-700')}>
+                        {weeklyImportSummary.created}
+                      </p>
+                    </div>
+                    <div className={combine("rounded-lg p-2", theme === 'dark' ? 'bg-blue-900/20' : 'bg-blue-50')}>
+                      <p className={combine("text-[10px] uppercase", get('text', 'tertiary'))}>Updated</p>
+                      <p className={combine("text-sm font-bold", theme === 'dark' ? 'text-blue-300' : 'text-blue-700')}>
+                        {weeklyImportSummary.updated}
+                      </p>
+                    </div>
+                    <div className={combine("rounded-lg p-2", theme === 'dark' ? 'bg-amber-900/20' : 'bg-amber-50')}>
+                      <p className={combine("text-[10px] uppercase", get('text', 'tertiary'))}>Skipped</p>
+                      <p className={combine("text-sm font-bold", theme === 'dark' ? 'text-amber-300' : 'text-amber-700')}>
+                        {weeklyImportSummary.skipped}
+                      </p>
+                    </div>
+                    <div className={combine("rounded-lg p-2", theme === 'dark' ? 'bg-purple-900/20' : 'bg-purple-50')}>
+                      <p className={combine("text-[10px] uppercase", get('text', 'tertiary'))}>Rows</p>
+                      <p className={combine("text-sm font-bold", theme === 'dark' ? 'text-purple-300' : 'text-purple-700')}>
+                        {weeklyImportSummary.total_rows}
+                      </p>
+                    </div>
+                  </div>
+
+                  {weeklyImportSummary.errors?.length > 0 && (
+                    <div className={combine(
+                      "rounded-lg border p-3 max-h-40 overflow-auto",
+                      theme === 'dark' ? 'border-red-900/40 bg-red-900/10' : 'border-red-200 bg-red-50'
+                    )}>
+                      <p className={combine("text-xs font-semibold mb-2", theme === 'dark' ? 'text-red-300' : 'text-red-700')}>
+                        Upload warnings
+                      </p>
+                      <ul className={combine("space-y-1 text-xs leading-5", get('text', 'secondary'))}>
+                        {weeklyImportSummary.errors.slice(0, 6).map((error, index) => (
+                          <li key={`${error}-${index}`}>- {error}</li>
+                        ))}
+                        {weeklyImportSummary.errors.length > 6 && (
+                          <li className={theme === 'dark' ? 'text-red-300' : 'text-red-700'}>
+                            +{weeklyImportSummary.errors.length - 6} more issue(s)
+                          </li>
+                        )}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>

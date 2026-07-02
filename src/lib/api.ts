@@ -10,8 +10,8 @@ const ENABLE_ENCRYPTION =
   process.env.NEXT_PUBLIC_ENABLE_ENCRYPTION?.toLowerCase() === 'true';
 
 
-export const backend_api = 'https://xozoschool.store';
-const API_BASE_HTTP = 'https://xozoschool.store/api/';
+export const backend_api = 'http://localhost:8000';
+const API_BASE_HTTP = 'http://localhost:8000/api/';
 
 
 declare module 'axios' {
@@ -518,6 +518,11 @@ export const adminApi = {
         }
         return apiClient.get('attendance/admin/history/teacher/', { params });
       },
+      bulkImport: (file: File) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        return apiClient.post('attendance/import/teacher-bulk/', formData);
+      },
     },
 
     staff: {
@@ -586,6 +591,17 @@ export const adminApi = {
 
     bulkMapSections: (data: Array<{ class_name: string; sections: string[] }>, params?: { school_id?: number }) =>
       apiClient.post('academics/setup/sections/bulk-map/', data, { params }),
+
+    structureManage: (params?: { class?: string; section?: string; subject?: string; school_id?: number }) =>
+      apiClient.delete('academics/structure/manage/', { params }),
+
+    structureEdit: (data: {
+      type: 'section' | 'subject';
+      class_name: string;
+      old_name: string;
+      new_name: string;
+      school_id?: number;
+    }) => apiClient.put('academics/structure/edit/', data),
   },
 
   students: {
@@ -2425,9 +2441,14 @@ export const studentApi = {
         params: {
           submission_id: submissionId,
           ...(type ? { type } : {}),
-        },
-      }),
-  },
+          },
+        }),
+      bulkImport: (file: File) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        return apiClient.post('attendance/import/teacher-bulk/', formData);
+      },
+    },
 
   timetable: {
     dashboardNow: () => apiClient.get('timetable/student/dashboard/now/'),
